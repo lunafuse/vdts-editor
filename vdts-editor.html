@@ -1,0 +1,3269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VDTS Editor</title>
+<style>
+  :root {
+    --paper: #f2f3f0;
+    --sheet: #fdfdfb;
+    --rule: #b8d4d8;      /* シート罫の水色 */
+    --rule-mid: #8fb8be;  /* 6コマ中罫 */
+    --rule-sec: #1e2b33;  /* 1秒太罫 */
+    --ink: #1e2b33;
+    --pencil: #6b7a84;
+    --blue: #2e6fa3;      /* 青鉛筆 = OK */
+    --shu: #c7361f;       /* 朱 = NG */
+    --shu-bg: #fbeae6;
+    --cell-w: 30px;   /* 4:3 のマス */
+    --cell-h: 22px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    display: flex;
+    overscroll-behavior: none;
+  }
+  .num { font-family: "SF Mono", "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ========= 左ペイン: 操作盤 ========= */
+  aside {
+    width: 300px; flex: 0 0 300px;
+    height: 100vh; overflow-y: auto;
+    background: var(--paper);
+    border-right: 2px solid var(--ink);
+    padding: 20px 18px 40px;
+    display: flex; flex-direction: column; gap: 0;
+  }
+  h1 {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+    font-size: 18px; font-weight: 700; letter-spacing: 0.06em;
+  }
+  .status { font-size: 11px; color: var(--pencil); margin: 2px 0 14px; }
+  .status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--pencil); margin-right: 6px; vertical-align: 1px; }
+  .status.watching .dot { background: var(--blue); animation: blink 2.4s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .status.watching .dot { animation: none; } }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .panel { border-top: 1px solid var(--rule); padding: 14px 0; }
+  .panel-title { font-size: 11px; letter-spacing: 0.12em; color: var(--pencil); margin-bottom: 8px; }
+  button {
+    font: inherit; font-size: 12.5px; letter-spacing: 0.05em;
+    background: var(--ink); color: var(--paper);
+    border: none; border-radius: 3px; padding: 7px 14px; cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 11px; color: var(--pencil); margin-top: 8px; }
+  ul.howto { list-style: none; font-size: 11.5px; color: var(--pencil); line-height: 1.55; display: flex; flex-direction: column; gap: 5px; }
+  ul.howto li { padding-left: 10px; text-indent: -10px; }
+  ul.howto li::before { content: "・"; }
+
+
+  textarea {
+    width: 100%; min-height: 96px; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+    border: 1px solid var(--rule); border-radius: 3px; background: #fff; color: var(--ink);
+    padding: 8px; resize: vertical;
+  }
+  textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .ledger-meta { font-size: 11px; color: var(--pencil); margin-top: 6px; }
+  .cmd-hint b { color: var(--ink); font-weight: 400; }
+  .cmd-hint code { font-family: "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--ink); background: none; border: none; padding: 0; }
+  .ledger-meta strong { color: var(--ink); font-weight: 600; }
+
+  .summary { display: flex; gap: 16px; font-size: 12px; margin-bottom: 10px; }
+  .summary[hidden] { display: none; }
+  .summary .count { font-size: 17px; font-weight: 600; margin-right: 3px; }
+  .ok-c { color: var(--blue); } .ng-c { color: var(--shu); }
+
+  ul.file-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--rule); border-radius: 3px;
+    padding: 7px 10px; cursor: pointer; width: 100%; text-align: left; font: inherit; color: inherit;
+  }
+  .file-item:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .file-item.selected { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--ink); }
+  .file-item .mini {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: "Hiragino Mincho ProN", serif; font-size: 10px; font-weight: 600;
+    border: 1.5px solid; transform: rotate(-6deg);
+  }
+  .mini.ok { color: var(--blue); border-color: var(--blue); }
+  .mini.ng { color: var(--shu); border-color: var(--shu); }
+  .mini.pend { color: var(--pencil); border-color: var(--pencil); }
+  .file-item .fi-cut { font-weight: 600; }
+  .file-item .fi-name { font-size: 10.5px; color: var(--pencil); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .file-item .fi-len { font-size: 11px; color: var(--pencil); }
+  .file-item .fi-dirty { color: var(--shu); font-weight: 700; }
+
+  .empty-note { color: var(--pencil); font-size: 12px; padding: 8px 0; }
+  .error-box {
+    margin-top: 10px; padding: 10px 12px; border: 1px solid var(--shu);
+    background: var(--shu-bg); color: var(--shu); font-size: 12px; border-radius: 3px;
+  }
+
+  /* ========= 右ペイン: シート ========= */
+  main {
+    flex: 1 1 auto; height: 100vh; overflow: auto;
+    padding: 20px 28px 120px;
+    position: relative;
+  }
+  main.drop-active { outline: 3px dashed var(--blue); outline-offset: -8px; }
+  .sheet-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  .sheet-head .stamp { margin-left: 0; }
+  .sheet-title { font-size: 18px; font-weight: 600; letter-spacing: 0.03em; }
+  .sheet-sub { font-size: 11.5px; color: var(--pencil); }
+  .sheet-sub .dirty { color: var(--shu); font-weight: 700; margin-left: 6px; }
+  .stamp {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px; border-radius: 50%;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: 17px; font-weight: 600; letter-spacing: 0.05em;
+    border: 2.5px solid; transform: rotate(-6deg);
+    background: #fff; user-select: none; margin-left: auto;
+  }
+  .stamp.ok { color: var(--blue); border-color: var(--blue); }
+  .stamp.ng { color: var(--shu); border-color: var(--shu); }
+  .stamp.pend { color: var(--pencil); border-color: var(--pencil); font-size: 12px; }
+
+  /* 道具（ペンで押せる大きさ） */
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
+  .tools button { min-height: 36px; padding: 6px 12px; }
+  .tools button.icon { min-width: 40px; font-size: 16px; padding: 4px 8px; }
+  .tools .sep { width: 1px; height: 24px; background: var(--rule); margin: 0 4px; }
+  .tools .duration-chip {
+    font-family: "SF Mono", Consolas, monospace; font-size: 13px;
+    border: 1px dashed var(--rule-mid); border-radius: 3px; padding: 6px 10px; cursor: pointer; background: #fff;
+    min-height: 36px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tools .duration-chip:hover { border-color: var(--ink); }
+  .paper-head {
+    display: grid; grid-template-columns: 1fr 2.4fr 1fr 1fr 1.3fr 1.3fr 1.2fr; gap: 0;
+    border: 1.5px solid var(--ink); background: var(--sheet); min-width: 640px; flex: 1 1 auto;
+  }
+  .ph-cell { border-right: 1px solid var(--rule-mid); padding: 4px 8px 5px; min-height: 48px; }
+  .ph-cell:last-child, .ph-cell.ph-memo { border-right: none; }
+  .ph-label { font-size: 9.5px; letter-spacing: 0.14em; color: var(--pencil); }
+  .ph-value { font-size: 15px; font-weight: 600; cursor: pointer; min-height: 22px; white-space: pre-wrap; word-break: break-all; }
+  .ph-value:hover { background: #fff; }
+  .ph-value.ph-empty { color: var(--rule-mid); font-weight: 400; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif; }
+  .ph-cut .ph-value.ph-empty { font-family: "SF Mono", "Cascadia Mono", Consolas, monospace; }
+  .ph-cut .ph-value { font-size: 20px; }
+  .ph-sub { font-size: 10.5px; color: var(--pencil); font-weight: 400; }
+  .ph-memo { grid-column: 1 / -1; border-top: 1px solid var(--rule-mid); min-height: 110px; }
+  .ph-memo .ph-value { font-size: 13px; font-weight: 500; }
+  .ph-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .inline-editor.multi { white-space: pre-wrap; overflow: auto; height: auto; }
+  tr.r-page td { border-bottom: 3px double var(--rule-sec); }
+  table.sheet thead tr.group-row th { font-size: 10px; letter-spacing: 0.14em; color: var(--pencil); padding: 3px 0; border-bottom: 1px solid var(--rule-mid); position: sticky; top: 0; z-index: 3; }
+  table.sheet thead tr:nth-child(2) th { top: 21px; }
+  table.sheet th.aux-head { color: var(--pencil); font-size: 11px; }
+  table.sheet th.douga-head { background: #f3f7f8; }
+  td.cell.aux { width: 58px; min-width: 58px; overflow: visible; border-left: none; border-right: none; }
+  table.sheet tbody tr td.cell.aux { border-bottom-color: transparent; }
+  table.sheet tbody tr.r-page td.cell.aux { border-bottom-color: var(--rule-sec); }
+  td.cell.aux[data-li="0"] { border-left: 1px solid var(--rule-mid); }
+  td.cell.aux[data-li="1"] { border-right: 1px solid var(--rule-mid); }
+  td.cell.aux .blk .blk-top, td.cell.aux .blk .blk-bottom { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--shu); }
+  td.cell.aux .blk .blk-top { top: 0; } td.cell.aux .blk .blk-bottom { bottom: 0; }
+  td.cell.aux .blk .blk-guide { position: absolute; top: 0; bottom: 0; left: 30%; border-left: 1px solid var(--shu); opacity: 0.8; }
+  td.cell.aux .blk .blk-guide.dashed { border-left-style: dashed; }
+  td.cell.aux .blk .blk-kind { font-size: 8.5px; font-weight: 600; margin-left: 1px; }
+  td.cell.aux .blk .blk-ch { position: absolute; left: 34%; transform: translateY(-50%); font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; font-size: 14px; font-weight: 600; line-height: 1; white-space: pre; }
+  td.cell.aux .blk.cam .cam-line { position: absolute; top: 0; bottom: 0; left: 30%; border-left: 1.2px solid var(--ink); }
+  td.cell.aux .blk.cam .cam-mark { position: absolute; left: 30%; width: 0; height: 0; margin-left: -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; }
+  td.cell.aux .blk.cam .cam-mark-top { top: 0; border-top: 11px solid var(--ink); }
+  td.cell.aux .blk.cam .cam-mark-bottom { bottom: 0; border-bottom: 11px solid var(--ink); }
+  td.cell.aux .blk.cam .cam-ring-top, td.cell.aux .blk.cam .cam-ring-bottom { position: absolute; left: 44%; }
+  td.cell.aux .blk.cam .cam-ring-top { top: -2px; } td.cell.aux .blk.cam .cam-ring-bottom { bottom: -2px; }
+  td.cell.aux .blk.cam .cam-ring { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1.2px solid var(--ink); border-radius: 50%; font-size: 9.5px; font-weight: 700; background: #fff; font-family: "SF Mono", Consolas, monospace; }
+  td.cell.aux .blk.cam .cam-ch { left: 44%; font-size: 12px; font-weight: 700; color: var(--ink); }
+  td.cell.aux .blk.cam .cam-shape { position: absolute; left: 12%; width: 56%; top: 2px; bottom: 2px; background: rgba(46,111,163,0.35); border: 1px solid var(--ink); }
+  td.cell.aux .blk.cam .cam-fi { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  td.cell.aux .blk.cam .cam-fo { clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  td.cell.aux .blk.cam .cam-ol { clip-path: polygon(0 0, 100% 0, 50% 50%, 100% 100%, 0 100%, 50% 50%); }
+  td.cell.aux .blk.cam .cam-shape-text { position: absolute; left: 70%; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 800; color: var(--shu); white-space: nowrap; font-family: "SF Mono", Consolas, monospace; }
+  tbody tr.r-last td { border-bottom: 2.5px solid var(--shu) !important; }
+  tbody tr.r-slack td { background: #ececec; color: #9aa3a8; }
+  tbody tr.r-slack td.cell .vline { border-left-color: #9aa3a8; }
+  tbody tr.r-slack td.koma-no { color: #9aa3a8; }
+  body.cut-mode table.sheet tbody tr td { border-bottom-color: #1f6feb !important; cursor: row-resize; }
+  body.cut-mode table.sheet tbody tr.r-six td { border-bottom-width: 2px; }
+  body.cut-mode table.sheet tbody tr.r-sec td { border-bottom-width: 3px; }
+  body.cut-mode table.sheet tbody tr:first-child td { border-top: 1px solid #1f6feb; }
+  body.cut-mode table.sheet tbody tr.shaku-sel td { background: rgba(31,111,235,0.10) !important; }
+  body.cut-mode td.koma-no { color: #1f6feb; font-weight: 700; }
+  td.cell.aux .blk .blk-speaker {
+    position: absolute; left: 3px; right: 3px; top: 3px; padding: 1px 2px; font-size: 9.5px; line-height: 1.2; font-weight: 700;
+    border: 1.2px solid currentColor; border-radius: 2px; background: #fff; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  td.cell.douga { background: #f6f9fa; }
+  td.cell.blank { cursor: pointer; }
+  td.cell.aux .blk { position: absolute; left: 0; right: 0; top: 0; z-index: 1; overflow: visible; pointer-events: none; }
+  td.cell.aux.in-blk { cursor: ns-resize; }
+  td.cell.aux.blk-end { }
+  td.cell.aux.blk-start { cursor: ns-resize; }
+  tfoot td.dur-handle {
+    text-align: center; font-size: 11px; color: var(--pencil); padding: 8px; cursor: ns-resize;
+    border-top: 1px solid var(--rule-mid); background: var(--paper); user-select: none;
+  }
+  tfoot td.dur-handle:hover { color: var(--ink); background: #fff; }
+  .inline-editor.blk-editor { min-width: 220px; }
+  .ext-banner {
+    background: var(--shu-bg); border: 1px solid var(--shu); color: var(--shu); border-radius: 3px;
+    padding: 8px 12px; margin-bottom: 10px; font-size: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .ext-banner button { background: var(--shu); }
+  #bannerBox { position: sticky; top: 0; z-index: 6; }
+  .ext-banner.browse { background: #eef4f8; border-color: var(--blue); color: var(--ink); }
+  .ext-banner.browse button { background: var(--blue); }
+  .ext-banner.browse button.ghost { background: transparent; color: var(--ink); border-color: var(--ink); }
+  .ext-banner.browse button.icon { min-width: 36px; padding: 4px 8px; }
+
+  .checks { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+  .check-row .mark { font-weight: 700; margin-right: 8px; }
+  .check-row.bad { color: var(--shu); }
+  .check-row.good .mark { color: var(--blue); }
+  .check-row.warn { color: var(--pencil); }
+
+  /* シート本体 */
+  .sheet-wrap { display: inline-block; position: relative; }
+  /* 上段メモ欄＝描画領域。ペンで引けば線、タップで文字。道具は欄の右上 */
+  .ph-memo { position: relative; padding-bottom: 8px; }
+  .ph-memo canvas.ink-canvas { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: auto; cursor: crosshair; touch-action: none; }
+  .ph-memo .ph-value { position: relative; z-index: 1; min-height: 130px; }
+  .ink-tools { position: absolute; right: 6px; top: 4px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; background: rgba(253,253,251,0.9); border-radius: 14px; padding: 2px 4px; }
+  .ink-tools .swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .ink-tools .swatch.on { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
+  .ink-tools button.w { min-width: 30px; min-height: 24px; padding: 2px 6px; font-size: 11px; }
+  .ink-tools button.w.on { background: var(--ink); color: var(--paper); }
+  .ph-memo .memo-resize { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; z-index: 3; }
+  .ph-memo .memo-resize::after { content: ""; display: block; width: 36px; height: 3px; margin: 3px auto 0; border-radius: 2px; background: var(--rule-mid); }
+  table.sheet {
+    border-collapse: collapse;
+    background: var(--sheet);
+    box-shadow: 0 1px 4px rgba(30,43,51,0.12);
+    touch-action: none;                 /* 指はスクロール、ペンは編集（JSで振り分け） */
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  table.sheet th, table.sheet td {
+    border-left: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
+    font-weight: normal;
+  }
+  table.sheet thead th {
+    font-family: "SF Mono", Consolas, monospace; font-size: 12.5px;
+    padding: 6px 0; border-bottom: 2px solid var(--rule-sec);
+    background: var(--sheet); position: sticky; top: 0; z-index: 2;
+    min-width: var(--cell-w);
+  }
+  table.sheet thead th.layer-name { cursor: pointer; }
+  table.sheet thead th.layer-name:hover { background: #fff; }
+  table.sheet thead th.add-layer { color: var(--pencil); cursor: pointer; min-width: 30px; font-size: 16px; }
+  table.sheet thead th.add-layer:hover { color: var(--ink); }
+  td.koma-no {
+    width: 36px; text-align: center;
+    font-family: "SF Mono", Consolas, monospace; font-size: 10px; color: var(--pencil);
+  }
+  td.cell {
+    width: var(--cell-w); min-width: var(--cell-w); height: var(--cell-h); text-align: center; position: relative;
+    font-family: "SF Mono", Consolas, monospace; font-size: 12.5px;
+    cursor: pointer;
+  }
+  td.sec-no {
+    width: 30px; text-align: center;
+    font-family: "SF Mono", Consolas, monospace; font-size: 10px; color: var(--pencil);
+    border-left: 1px solid var(--rule);
+  }
+  /* 罫線: 通常 / 6コマ中罫 / 24コマ(1秒)太罫 */
+  tr.r-norm td { border-bottom: 1px solid var(--rule); }
+  tr.r-six  td { border-bottom: 1px solid var(--rule-mid); }
+  tr.r-sec  td { border-bottom: 2px solid var(--rule-sec); }
+  /* ホールドのつなぎ縦線 */
+  td.cell .vline {
+    position: absolute; left: 50%; top: 0; bottom: 0;
+    border-left: 1px solid var(--ink); opacity: 0.55; pointer-events: none;
+  }
+  td.cell.empty .vline { border-left-style: dashed; border-left-color: var(--pencil); }
+  td.cell.empty { color: var(--pencil); }
+  td.cell.tick { color: var(--ink); font-size: 11px; }
+  td.cell.tick .vline { top: 60%; }
+  td.cell.editing { background: #fff; box-shadow: inset 0 0 0 2px var(--blue); }
+  td.cell.drag-src { background: #eef4f8; }
+  td.cell.drag-target { box-shadow: inset 0 3px 0 0 var(--blue); }
+  td.cell.drag-target-below { box-shadow: inset 0 -3px 0 0 var(--blue); }
+  td.cell.unknown { color: var(--pencil); }
+
+  .sheet-note { font-size: 11px; color: var(--pencil); margin-top: 8px; }
+  .main-empty { color: var(--pencil); padding: 80px 0; text-align: center; line-height: 2; }
+
+  /* ========= その場入力（マスの上に出る） ========= */
+  .inline-editor {
+    position: fixed; z-index: 1000;
+    font-family: "SF Mono", Consolas, monospace; font-size: 15px; font-weight: 600;
+    text-align: center; line-height: 1.2;
+    min-width: 64px; width: auto; height: 34px; min-height: 34px; padding: 5px 8px;
+    border: 2px solid var(--blue); border-radius: 6px; background: #fff; color: var(--ink);
+    box-shadow: 0 6px 18px rgba(30,43,51,0.22); outline: none; resize: none; overflow: hidden;
+    white-space: nowrap;
+  }
+  .inline-editor:focus { outline: none; }
+  .pen-pad {
+    position: fixed; z-index: 1000;
+    display: grid; grid-template-columns: repeat(3, 40px); gap: 4px;
+    padding: 6px; background: #fff; border: 1px solid var(--rule-mid); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(30,43,51,0.22);
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .pen-pad button {
+    width: 40px; height: 36px; padding: 0; border-radius: 5px;
+    background: var(--paper); color: var(--ink); border: 1px solid var(--rule);
+    font-family: "SF Mono", Consolas, monospace; font-size: 15px; font-weight: 600;
+  }
+  .pen-pad button.act { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .pen-pop {
+    position: fixed; z-index: 1000; width: 300px; padding: 10px;
+    background: #fff; border: 1px solid var(--rule-mid); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(30,43,51,0.22);
+  }
+  .pen-pop button { min-height: 36px; }
+  .pen-pop textarea { min-height: 56px; }
+  .pen-pad button.shu { color: var(--shu); }
+  .pen-pad button:active { background: var(--rule); }
+
+  /* ========= シートメモ（.memo.json サイドカー） ========= */
+  .memo-panel { margin: 12px 0 18px; max-width: 620px; }
+  .memo-head { font-size: 11px; letter-spacing: 0.12em; color: var(--pencil); margin-bottom: 6px; }
+  .memo-stale { font-size: 12px; color: var(--shu); margin-bottom: 6px; }
+  .memo-item { background: #fff; border: 1px solid var(--rule); border-left: 3px solid var(--pencil); border-radius: 3px; padding: 7px 10px; margin-bottom: 6px; font-size: 12.5px; }
+  .memo-item.mk-shusei { border-left-color: var(--shu); }
+  .memo-item.mk-moushiokuri { border-left-color: var(--ink); }
+  .memo-item.resolved { opacity: 0.55; }
+  .memo-item.resolved .memo-body { text-decoration: line-through; }
+  .memo-kind { font-weight: 600; margin-right: 8px; font-size: 11.5px; }
+  .memo-item.mk-shusei .memo-kind { color: var(--shu); }
+  .memo-item.mk-moushiokuri .memo-kind { color: var(--ink); }
+  .memo-item.mk-kakunin .memo-kind { color: var(--pencil); }
+  .memo-target { font-size: 11px; color: var(--pencil); }
+  .memo-body { margin: 3px 0; white-space: pre-wrap; }
+  .memo-meta { font-size: 11px; color: var(--pencil); display: flex; gap: 10px; align-items: center; }
+  .memo-meta button { background: transparent; color: var(--pencil); border: 1px solid var(--rule); border-radius: 3px; padding: 1px 8px; font-size: 11px; }
+  .memo-form { border: 1px dashed var(--rule-mid); border-radius: 3px; padding: 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .memo-form .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .memo-form input, .memo-form select, .memo-form textarea { font: inherit; font-size: 12px; border: 1px solid var(--rule); border-radius: 3px; padding: 3px 6px; background: #fff; color: var(--ink); }
+  .memo-form textarea { width: 100%; min-height: 44px; resize: vertical; }
+  .memo-form input[type="number"] { width: 60px; }
+  td.memo-lane { width: 16px; position: relative; }
+  td.memo-lane .mbar { position: absolute; top: 0; bottom: 0; width: 4px; opacity: 0.85; }
+  .mbar.mk-shusei { background: var(--shu); }
+  .mbar.mk-moushiokuri { background: var(--ink); }
+  .mbar.mk-kakunin { background: var(--pencil); }
+  .mbar.m-start { top: 2px; border-top-left-radius: 2px; border-top-right-radius: 2px; }
+  .mbar.m-end { bottom: 2px; border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+  .orphan-note { font-size: 11px; color: var(--pencil); padding: 2px 4px; }
+  details.memo-details > summary { cursor: pointer; font-size: 11px; letter-spacing: 0.12em; color: var(--pencil); list-style: none; }
+  details.memo-details > summary::before { content: "▸ "; }
+  details.memo-details[open] > summary::before { content: "▾ "; }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>VDTS Editor</h1>
+  <div class="status" id="status" hidden><span id="statusText"></span></div>
+
+  <div class="panel">
+    <div class="panel-title">開く</div>
+    <div class="btn-row">
+      <button id="newBtn">新規作成</button>
+      <button class="ghost" id="openBtn">xdts / tdts / vdts を開く</button>
+    </div>
+    <div class="hint" id="folderHint">この画面へドラッグ＆ドロップしても開けます（複数可）</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">カット一覧</div>
+    <div class="summary" id="summaryLine" hidden>
+      <span><span class="count num" id="cntAll">0</span>本</span>
+      <span class="ok-c"><span class="count num" id="cntOk">0</span>OK</span>
+      <span class="ng-c"><span class="count num" id="cntNg">0</span>要確認</span>
+    </div>
+    <ul class="file-list" id="fileList"><li class="empty-note">開いたカットがここに並びます。</li></ul>
+    <div class="error-box" id="errorBox" hidden></div>
+  <div class="panel" id="textPanel" hidden>
+    <details class="memo-details" id="textDetails"><summary>テキストで一括入力（台詞・カメラ）</summary>
+      <div class="hint" style="margin:6px 0 4px">台詞・カメラを行単位でまとめて書く。ここに書くとシートに、シートを触るとここに反映される</div>
+      <div class="hint cmd-hint" style="margin:8px 0 4px"><b>台詞欄</b>（始まり｜終わり｜だれ｜なに。0+01 が1コマ目。話者に (M)/(OFF)/(N)、効果音は SE）<br>例: <code>0+01 | 1+00 | 太郎 | おはよう</code></div>
+      <textarea id="dialogueText" spellcheck="false" style="min-height:64px"></textarea>
+      <div class="hint cmd-hint" style="margin:8px 0 4px"><b>カメラ欄</b>（始まり｜終わり｜前｜動き｜後。動きは FIX / PAN / T.U / T.B / Follow / F.I / F.O / O.L / SL か自由文）<br>例: <code>0+01 | 1+00 | A | PAN | B</code></div>
+      <textarea id="cameraText" spellcheck="false" style="min-height:48px"></textarea>
+    </details>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">使い方</div>
+    <ul class="howto">
+      <li>数字のマスをタップ — その場で書き直す。打った文字は即反映。別の所を触ると閉じる。Esc で元に戻す</li>
+      <li>原画と原画の間の線をタップ — 中割 ○ を付ける／外す</li>
+      <li>×の途中、または最後の原画より後をタップ — そのコマから新しい番号を書く</li>
+      <li>長押し（右クリック） — そのコマから新しい番号を書く</li>
+      <li>数字や×を上下にドラッグ — 変化点を動かす（指の場合は長押ししてからドラッグ）</li>
+      <li>台詞・カメラの空きをタップ — ブロックを置いて書く。端をドラッグすると伸縮、真ん中をドラッグすると移動</li>
+      <li>列名をタップ — 改名。＋ — 列を追加</li>
+      <li>尺 — 上段の尺をタップして書き換えるか、シート末尾の ⇕ を上下にドラッグする。赤線が尺の終わり</li>
+      <li>尺編集 — 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす</li>
+      <li>余尺 — 頭と尻にコマを足す。足した行は薄いグレー。尺の表示は総尺</li>
+      <li>動画欄を更新 — 原画の番号と中割から動画番号を振り直す。動画欄のマスは原画欄と同じ操作で直せる</li>
+      <li>コマ番号をタップ — 朱を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
+      <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／朱／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
+      <li>上書き保存 — 名前・役・ひとことを付けて版を1つ重ねる。版 N — 過去の版を表示する</li>
+      <li>テキストで一括入力 — 台詞・カメラを行単位で書く（書式の例は欄の上）</li>
+      <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・朱・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
+    </ul>
+  </div>
+</aside>
+
+<main id="mainPane">
+  <div class="main-empty">左で開くか、ここへドラッグ＆ドロップしてください。</div>
+</main>
+
+<script>
+"use strict";
+function parseXdts(text) {
+  const body = text.replace(/^exchangeDigitalTimeSheet Save Data\r?\n/, "");
+  const doc = JSON.parse(body);
+  return (doc.timeTables || []).map(tt => {
+    const duration = tt.duration;
+    const layerNames = ((tt.timeTableHeaders || []).find(h => h.fieldId === 0) || {}).names || [];
+    const cellField = (tt.fields || []).find(f => f.fieldId === 0);
+    const layers = (cellField ? cellField.tracks : []).map(tr => {
+      const changes = (tr.frames || [])
+        .map(fr => ({ koma: fr.frame + 1, cell: String((((fr.data || [])[0] || {}).values || [""])[0]) }))
+        .sort((a, b) => a.koma - b.koma);
+      const expanded = new Array(duration).fill(null);
+      // 中割記号（SYMBOL_TICK_*）はその1コマだけの印で、続くコマは直前の保持値に戻る
+      // （CSP・OpenToonz・Auto Sheet の扱いと同じ。tick の後に保持値を再出力しないファイルも正しく読める）
+      let held = null;
+      changes.forEach((ch, i) => {
+        const end = (i + 1 < changes.length) ? changes[i + 1].koma - 1 : duration;
+        const isTickCell = /^SYMBOL_TICK_/.test(ch.cell);
+        if (!isTickCell) held = ch.cell;
+        for (let k = ch.koma; k <= end; k++) expanded[k - 1] = (isTickCell && k > ch.koma) ? held : ch.cell;
+      });
+      const usedCells = [...new Set(changes.map(c => c.cell))]
+        .filter(c => c !== "x" && c !== "" && !/^SYMBOL_/.test(c));
+      return {
+        trackNo: tr.trackNo,
+        layerName: layerNames[tr.trackNo] || String(tr.trackNo),
+        changes, expanded, usedCells
+      };
+    });
+    return { name: tt.name, duration, layers };
+  });
+}
+
+const FPS = 24;
+
+/* xdtsの記号値 → シート上の表記 */
+const XDTS_SYMBOLS = {
+  "SYMBOL_NULL_CELL": "×",   // 空セル
+  "SYMBOL_TICK_1": "○",      // 中割記号
+  "SYMBOL_TICK_2": "●",      // 中割記号
+};
+function isEmptyCell(v) {
+  return v === null || v === undefined || v === "" || v === "undefined" || v === "x" || v === "×" || v === "SYMBOL_NULL_CELL";
+}
+function displayCell(v) {
+  if (isEmptyCell(v)) return "×";
+  if (v in XDTS_SYMBOLS) return XDTS_SYMBOLS[v];
+  if (/^SYMBOL_/.test(v)) return "・";  // 未知の記号（詳細はツールチップ）
+  return v;
+}
+function komaToShaku(koma) { return Math.floor(koma / FPS) + "+" + String(koma % FPS).padStart(2, "0"); }
+function shakuToKoma(s) {
+  const m = String(s).trim().match(/^(\d+)\s*\+\s*(\d+)$/);
+  if (m) return Number(m[1]) * FPS + Number(m[2]);
+  const n = Number(String(s).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/* ========= 内部モデル（編集の正） =========
+   { duration, layers: [ { name, cells } ] }
+   cells はコマ展開済み（長さ=duration）。空セルは "×" に統一。
+   xdtsの癖（0始まりフレーム・暗黙ホールド・記号値）はパーサとライターの中に閉じ込め、
+   UI・編集・照合はこのモデルだけを扱う */
+
+const EMPTY = "×";
+
+function modelFromParsed(tt) {
+  return {
+    duration: tt.duration,
+    layers: tt.layers.map(L => ({
+      name: L.layerName,
+      cells: L.expanded.slice(0, tt.duration).map(v => isEmptyCell(v) ? EMPTY : String(v)),
+    })),
+  };
+}
+
+/* シートの正規化フィンガープリント（MEMO_SPEC.md v0.1）
+   CSP等の再構築型書き出しを挟んでも「意味内容」が同じなら一致するよう、
+   全空レイヤー除外・レイヤー名辞書順の正規文字列から SHA-256 を取る */
+function modelFingerprint(model) {
+  const layers = model.layers
+    .filter(L => L.cells.some(v => v !== EMPTY))
+    .slice()
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const canon = ["duration=" + model.duration]
+    .concat(layers.map(L => L.name + "=" + L.cells.join(",")))
+    .join(";");
+  return "sha256:" + sha256Hex(canon);
+}
+
+function sheetFingerprint(tt) { return modelFingerprint(modelFromParsed(tt)); }
+
+/* ========= xdtsライター（CSP式ミニマル構造 version 5） =========
+   samples/イラスト_20260803.xdts の構造を模倣する。トップレベルは
+   timeTables・version・header のみ。frame は0始まりへ変換、空セルは
+   SYMBOL_NULL_CELL で書く（"x" は使わない）。東映DTS系 version 10 の
+   未文書フィールド（dummykomas等）は再現しない。
+   CSPが付けるduration位置の終端フレームも書かない（変化点のみ） */
+
+function cellsToFrames(cells) {
+  const frames = [];
+  let prev;
+  cells.forEach((v, i) => {
+    if (i === 0 || v !== prev) {
+      frames.push({ data: [{ id: 0, values: [v === EMPTY ? "SYMBOL_NULL_CELL" : String(v)] }], frame: i });
+    }
+    prev = v;
+  });
+  // 空のシートでもトラックは1変化点持つ（ゴールデンの空トラックと同形）
+  if (!frames.length) frames.push({ data: [{ id: 0, values: ["SYMBOL_NULL_CELL"] }], frame: 0 });
+  return frames;
+}
+
+/* 台詞欄・カメラ欄（fieldId 3 / 5）のエンコード: 東映 .tdts 実物の形。
+   開始コマに値（台詞は ["話者","台詞"]、カメラは ["文"]）、続くコマは毎コマ SYMBOL_HYPHEN、ブロックの外はエントリ無し。
+   xdts でも同じ形で書く（同じ系のコード。CSP 側の読み取りは未検証） */
+function blocksToFrames(blocks, lane, duration, makeValues, withColor) {
+  const frames = [];
+  (blocks || []).filter(b => (b.lane || 0) === lane).slice().sort((a, b) => a.from - b.from).forEach(b => {
+    const from = Math.max(1, Math.round(Number(b.from) || 1));
+    const to = Math.min(duration, Math.max(from, Math.round(Number(b.to) || from)));
+    const values = makeValues(b);
+    if (!values) return;
+    const entry = (vals, fr) => withColor ? { data: [{ fontColorId: 0, id: 0, values: vals }], frame: fr } : { data: [{ id: 0, values: vals }], frame: fr };
+    frames.push(entry(values, from - 1));
+    for (let f = from + 1; f <= to; f++) frames.push(entry(["SYMBOL_HYPHEN"], f - 1));
+  });
+  return frames;
+}
+const DIALOGUE_KINDS = ["", "M", "OFF", "N", "SE"];   // "" = ON（通常の台詞・口パクあり）
+const DIALOGUE_KIND_LABELS = { "": "ON", M: "M（モノローグ）", OFF: "OFF（画面外）", N: "N（ナレーション）", SE: "SE（効果音）" };
+/* 話者欄への埋め方は脚本と同じ「話者(M)」「話者(OFF)」「話者(N)」。SE は話者が無ければ "SE" だけ */
+function encodeSpeaker(b) {
+  const sp = String(b.speaker || "").trim(), k = String(b.kind || "").toUpperCase();
+  if (!k) return sp;
+  if (k === "SE" && !sp) return "SE";
+  return sp + "(" + k + ")";
+}
+function decodeSpeaker(str) {
+  const raw = String(str || "").normalize("NFKC").trim();
+  if (raw.toUpperCase() === "SE") return { speaker: "", kind: "SE" };
+  const m = raw.match(/^(.*?)\s*[（(]\s*(M|OFF|ON|N|SE|MONO|モノローグ|オフ|ナレーション)\s*[)）]$/i);
+  if (!m) return { speaker: raw, kind: "" };
+  const t = m[2].toUpperCase();
+  const kind = /^(M|MONO|モノローグ)$/.test(t) ? "M" : /^(OFF|オフ)$/.test(t) ? "OFF" : /^(N|ナレーション)$/.test(t) ? "N" : t === "SE" ? "SE" : "";
+  return { speaker: m[1].trim(), kind };
+}
+function dialogueValues(b) { const sp = encodeSpeaker(b), tx = String(b.text || "").trim(); return (sp || tx) ? [sp, tx] : null; }
+
+/* カメラワークの語彙（紙のシートの慣用）: FIX / PAN / T.U / T.B / Follow / F.I / F.O / O.L / SL、それ以外は自由文。
+   フレーム名は A→B のように前後に付く（同じなら FIX）。文字列 "A PAN B" と {kind,fromLabel,toLabel,text} を相互変換する */
+const CAMERA_KINDS = ["FIX", "PAN", "T.U", "T.B", "Follow", "F.I", "F.O", "O.L", "SL"];
+function normalizeCameraKind(tok) {
+  const t = String(tok || "").normalize("NFKC").replace(/[.\s_\-・/()（）]+/g, "").toUpperCase();
+  if (!t) return "";
+  if (t === "FIX" || t === "固定") return "FIX";
+  if (t === "PAN" || t === "パン") return "PAN";
+  if (t === "TU" || t === "TRACKUP" || t === "トラックアップ") return "T.U";
+  if (t === "TB" || t === "TRACKBACK" || t === "トラックバック") return "T.B";
+  if (t === "FOLLOW" || t === "フォロー") return "Follow";
+  if (t === "FI" || t === "FADEIN" || t === "フェードイン") return "F.I";
+  if (t === "FO" || t === "FADEOUT" || t === "フェードアウト") return "F.O";
+  if (t === "OL" || t === "OVERLAP" || t === "オーバーラップ") return "O.L";
+  if (t === "SL" || t === "SLIDE" || t === "スライド") return "SL";
+  return "";
+}
+function parseCameraText(str) {
+  const raw = String(str || "").normalize("NFKC").trim();
+  const out = { kind: "", fromLabel: "", toLabel: "", text: "" };
+  if (!raw) return out;
+  // "A→B" / "A>B" / "A-B" のフレーム対
+  let rest = raw;
+  const pair = rest.match(/(?:^|\s)([A-Z]\d?)\s*(?:→|->|>|⇒|〜|~)\s*([A-Z]\d?)(?=\s|$)/);
+  if (pair) { out.fromLabel = pair[1]; out.toLabel = pair[2]; rest = (rest.slice(0, pair.index) + " " + rest.slice(pair.index + pair[0].length)).trim(); }
+  const toks = rest.split(/\s+/).filter(Boolean);
+  const others = [];
+  toks.forEach(t => {
+    const k = normalizeCameraKind(t);
+    if (k && !out.kind) { out.kind = k; return; }
+    if (/^[A-Z]\d?$/.test(t) && !pair) { if (!out.fromLabel) out.fromLabel = t; else if (!out.toLabel) out.toLabel = t; return; }
+    others.push(t);
+  });
+  out.text = others.join(" ");
+  if (!out.kind && out.fromLabel && out.toLabel && out.fromLabel === out.toLabel) out.kind = "FIX";
+  return out;
+}
+function cameraDisplayText(b) {
+  const kind = b.kind || "";
+  const mid = kind ? (b.text ? kind + " " + b.text : kind) : (b.text || "");
+  return [b.fromLabel || "", mid, b.toLabel || ""].filter(Boolean).join(" ").trim();
+}
+/* 東映DTSのカメラ欄は「指示ウィンドウ」の選択をコード（数字）で保存し、紙には PAN 等の文字＋▼線▲で描く。
+   コード表は公開されていない。実物の .tdts（version 7。値 "12" が DTS の PNG 出力では PAN）で確認できたものだけ載せ、未知は生の値を自由文として保つ */
+const TDTS_CAMERA_CODES = { "12": "PAN" };
+const TDTS_CAMERA_CODE_OF = Object.fromEntries(Object.entries(TDTS_CAMERA_CODES).map(([k, v]) => [v, k]));
+function cameraFromTdtsValue(str) {
+  const raw = String(str || "").trim();
+  if (/^\d+$/.test(raw) && TDTS_CAMERA_CODES[raw]) return { kind: TDTS_CAMERA_CODES[raw], fromLabel: "", toLabel: "", text: "", tdtsCode: raw };
+  if (/^\d+$/.test(raw)) return { kind: "", fromLabel: "", toLabel: "", text: raw, tdtsCode: raw };   // 未知のコード: 数字のまま持つ
+  return parseCameraText(raw);
+}
+function cameraValues(b, forTdts) {
+  if (forTdts) {
+    if (b.tdtsCode && (!b.kind || TDTS_CAMERA_CODES[b.tdtsCode] === b.kind) && !b.text && !b.fromLabel && !b.toLabel) return [b.tdtsCode];
+    if (b.kind && TDTS_CAMERA_CODE_OF[b.kind] && !b.text && !b.fromLabel && !b.toLabel) return [TDTS_CAMERA_CODE_OF[b.kind]];
+  }
+  const tx = cameraDisplayText(b); return tx ? [tx] : null;
+}
+function auxTracks(model, fieldId, withColor) {
+  const D = (model.slackHead || 0) + model.duration + (model.slack || 0);
+  const blocks = fieldId === 3 ? (model.dialogue || []) : (model.camera || []);
+  const mk = fieldId === 3 ? dialogueValues : (b => cameraValues(b, withColor));   // withColor = tdts 向け
+  return [0, 1].map(lane => ({ trackNo: lane, frames: blocksToFrames(blocks, lane, D, mk, withColor) }));
+}
+/* 書き出す欄: o.source === "douga" なら動画欄（無ければ原画欄） */
+function exportLayers(model, o) {
+  return (o && o.source === "douga" && model.douga && model.douga.length) ? model.douga : model.layers;
+}
+
+function writeXdts(model, opts) {
+  const o = opts || {};
+  const layers = exportLayers(model, o);
+  const doc = {
+    timeTables: [{
+      duration: (model.slackHead || 0) + model.duration + (model.slack || 0),     // 余尺も撮影に渡す（xdts には余尺の概念が無いので総尺）
+      fields: [
+        { tracks: layers.map((L, i) => ({ trackNo: i, frames: cellsToFrames(L.cells) })), fieldId: 0 },
+        { tracks: auxTracks(model, 3, false), fieldId: 3 },
+        { tracks: auxTracks(model, 5, false), fieldId: 5 },
+      ],
+      name: o.name != null ? String(o.name) : "sheet1",
+      timeTableHeaders: [
+        { names: layers.map(L => L.name), fieldId: 0 },
+        { names: ["S1", "S2"], fieldId: 3 },
+        { names: ["CAM1", "CAM2"], fieldId: 5 },
+      ],
+    }],
+    version: 5,
+    header: {
+      cut: o.cut != null ? fmtCut(o.cut) : "0",
+      scene: o.scene != null ? fmtScene(o.scene) : "0",
+    },
+  };
+  return "exchangeDigitalTimeSheet Save Data\n" + JSON.stringify(doc);
+}
+
+/* SHA-256（純JS・依存なし）。GAS版と同一コードを保つため crypto.subtle は使わない */
+function sha256Hex(str) {
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str.codePointAt(i);
+    if (c > 0xffff) i++;
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a,
+      h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const hi = Math.floor(bitLen / 4294967296), lo = bitLen % 4294967296;
+  bytes.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255,
+             (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255);
+  const w = new Array(64);
+  for (let i = 0; i < bytes.length; i += 64) {
+    for (let t = 0; t < 16; t++) {
+      w[t] = (bytes[i + 4 * t] << 24) | (bytes[i + 4 * t + 1] << 16) | (bytes[i + 4 * t + 2] << 8) | bytes[i + 4 * t + 3];
+    }
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);
+      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);
+      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let t = 0; t < 64; t++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[t] + w[t]) | 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+  }
+  return [h0, h1, h2, h3, h4, h5, h6, h7]
+    .map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+function parseLedger(csvText) {
+  const rows = [];
+  for (const line of csvText.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#") || t.startsWith("※")) continue;
+    const cols = t.split(/[,\t]/).map(c => c.trim());
+    if (cols.length < 2) continue;
+    const koma = shakuToKoma(cols[1]);
+    if (koma === null) continue;
+    rows.push({ key: cols[0], koma, raw: cols[1] });
+  }
+  return rows;
+}
+
+function matchLedger(basename, ledger) {
+  const tokens = basename.replace(/\.xdts$/i, "").split(/[^0-9A-Za-z]+/).filter(Boolean);
+  let best = null;
+  ledger.forEach(entry => {
+    const kNum = /^\d+$/.test(entry.key) ? Number(entry.key) : null;
+    tokens.forEach((tok, idx) => {
+      const hit = tok === entry.key ||
+        (kNum !== null && /^\d+$/.test(tok) && Number(tok) === kNum);
+      if (hit && (!best || idx >= best.idx)) best = { entry, idx };
+    });
+  });
+  return best ? best.entry : null;
+}
+
+function inspect(parsed, ledgerEntry) {
+  const checks = [];
+  let ng = false;
+  const tt = parsed[0];
+  if (!tt) return { checks: [{ level: "bad", text: "タイムテーブルが空です" }], ng: true };
+
+  if (ledgerEntry) {
+    if (tt.duration === ledgerEntry.koma) {
+      checks.push({ level: "good", text: `尺 一致 — ${komaToShaku(tt.duration)}（${tt.duration}コマ）` });
+    } else {
+      ng = true;
+      const d = tt.duration - ledgerEntry.koma;
+      checks.push({ level: "bad", text: `尺 不一致 — シート ${komaToShaku(tt.duration)} / 指定 ${komaToShaku(ledgerEntry.koma)}（${d > 0 ? "+" : ""}${d}コマ）` });
+    }
+  } else {
+    checks.push({ level: "warn", text: "カット表に該当なし（尺照合は保留）" });
+  }
+
+  tt.layers.forEach(L => {
+    const nums = L.usedCells.filter(c => /^\d+$/.test(c)).map(Number);
+    if (!nums.length) return;
+    const max = Math.max(...nums), set = new Set(nums), missing = [];
+    for (let i = 1; i <= max; i++) if (!set.has(i)) missing.push(i);
+    if (missing.length) {
+      ng = true;
+      checks.push({ level: "bad", text: `${L.layerName}セル 欠番 — ${missing.join(", ")}（使用: 1〜${max}）` });
+    } else {
+      checks.push({ level: "good", text: `${L.layerName}セル 欠番なし（1〜${max}）` });
+    }
+  });
+
+  if (parsed.length > 1) checks.push({ level: "warn", text: `タイムテーブルが${parsed.length}本あります（先頭のみ照合）` });
+  return { checks, ng, pending: !ledgerEntry };
+}
+
+/* ========= 編集操作（純関数・モデルのみを触る） =========
+   cells は 0始まり添字で扱う（UIの1始まりコマ番号は呼び出し側で -1 する）。
+   「ホールドの再計算は人に見せない」— 数字を書けば直前ラベルからそこまで埋まり、
+   消せば前の露出に吸収される。中割記号はホールドの中に置ける1コマの印 */
+
+const TICK = "SYMBOL_TICK_1";
+function isTick(v) { return v === "SYMBOL_TICK_1" || v === "SYMBOL_TICK_2"; }
+
+/* i の直前で「保持されている値」（中割記号を飛ばして遡る） */
+function heldBefore(cells, i) {
+  for (let j = i - 1; j >= 0; j--) if (!isTick(cells[j])) return cells[j];
+  return EMPTY;
+}
+/* i が「変化点」か（紙で番号を書く位置）。中割記号は変化点ではない */
+function isChangePoint(cells, i) {
+  if (i < 0 || i >= cells.length) return false;
+  if (isTick(cells[i])) return false;
+  return cells[i] !== heldBefore(cells, i);
+}
+/* i を含む同値ラン（中割記号は透明扱い）の終端添字 */
+function runEnd(cells, i) {
+  const v = isTick(cells[i]) ? heldBefore(cells, i) : cells[i];
+  let e = i;
+  for (let j = i + 1; j < cells.length; j++) {
+    if (isTick(cells[j])) { e = j; continue; }
+    if (cells[j] !== v) break;
+    e = j;
+  }
+  return e;
+}
+/* i を含むランの先頭添字（変化点） */
+function runStart(cells, i) {
+  const v = isTick(cells[i]) ? heldBefore(cells, i) : cells[i];
+  let s = i;
+  for (let j = i - 1; j >= 0; j--) {
+    if (isTick(cells[j])) { s = j; continue; }
+    if (cells[j] !== v) break;
+    s = j;
+  }
+  return s;
+}
+
+/* ラベルを書く。'' なら「消す」= 変化点を外して前の露出に吸収（ホールド中なら何もしない）。
+   "×"/"x" は空セルとして書く。返り値は変更があったか */
+function setLabelAt(cells, i, label) {
+  if (i < 0 || i >= cells.length) return false;
+  let v = String(label == null ? "" : label).trim().replace(/\s+/g, "");
+  if (v === "x" || v === "X" || v === "×") v = EMPTY;
+  if (v === "") {
+    if (!isChangePoint(cells, i)) return false;
+    const prev = heldBefore(cells, i);
+    const e = runEnd(cells, i);
+    let changed = false;
+    for (let j = i; j <= e; j++) if (!isTick(cells[j]) && cells[j] !== prev) { cells[j] = prev; changed = true; }
+    return changed;
+  }
+  const e = runEnd(cells, i);
+  let changed = false;
+  for (let j = i; j <= e; j++) if ((j === i || !isTick(cells[j])) && cells[j] !== v) { cells[j] = v; changed = true; }
+  return changed;
+}
+
+/* 中割記号は原画と原画の間にしか存在しない:
+   ホールド中で、かつそのランの後ろに次の原画（空でないラベル）が続くコマにだけ置ける */
+function canTickAt(cells, i) {
+  if (i < 0 || i >= cells.length) return false;
+  if (isChangePoint(cells, i)) return false;
+  if (heldBefore(cells, i) === EMPTY) return false;
+  const e = runEnd(cells, i);
+  return e + 1 < cells.length && !isEmptyCell(cells[e + 1]) && !isTick(cells[e + 1]);
+}
+function toggleTickAt(cells, i) {
+  if (i < 0 || i >= cells.length) return false;
+  if (isTick(cells[i])) { cells[i] = heldBefore(cells, i); return true; }
+  if (!canTickAt(cells, i)) return false;
+  cells[i] = TICK;
+  return true;
+}
+
+/* 変化点 from を to へ動かす（ツメの調整）。前後の変化点は越えない（各ランは最短1コマ）。
+   返り値: 実際に落ち着いた添字（動かなければ from） */
+function moveChangePoint(cells, from, to) {
+  if (!isChangePoint(cells, from)) return from;
+  const v = cells[from];
+  const prevV = heldBefore(cells, from);
+  const s = runStart(cells, from);              // == from
+  const e = runEnd(cells, from);
+  const lo = from === 0 ? 0 : runStart(cells, from - 1) + 1;   // 前のランは最短1コマ残す
+  const hi = e;                                                // 自分のランも最短1コマ
+  const t = Math.max(lo, Math.min(hi, to));
+  if (t === from || from === 0) return from;
+  if (t < from) {
+    cells[t] = v;                                                  // 新しい変化点（中割の上に来たら中割は消える）
+    for (let j = t + 1; j < from; j++) if (!isTick(cells[j])) cells[j] = v;
+  } else {
+    for (let j = from; j < t; j++) if (!isTick(cells[j])) cells[j] = prevV;
+    if (isTick(cells[t])) cells[t] = v;
+  }
+  return t;
+}
+
+/* at（1始まり）のコマの前に n コマ挿入。セル欄・動画欄は直前の保持値でホールドを伸ばし、台詞・カメラ・朱はずらす（跨ぐものは伸びる） */
+function insertFrames(model, at, n) {
+  n = Math.max(0, Math.round(n)); at = Math.max(1, Math.min(totalFrames(model) + 1, Math.round(at)));
+  if (!n) return false;
+  const i = at - 1;
+  const fillCells = cells => { const held = i > 0 ? heldBefore(cells, i) : EMPTY; const ins = new Array(n).fill(i > 0 && !isTick(cells[i - 1]) ? cells[i - 1] : held); cells.splice(i, 0, ...ins); };
+  (model.layers || []).forEach(L => fillCells(L.cells));
+  (model.douga || []).forEach(L => fillCells(L.cells));
+  const shift = b => { if (b.from >= at) { b.from += n; b.to += n; } else if (b.to >= at) { b.to += n; } };
+  (model.dialogue || []).forEach(shift); (model.camera || []).forEach(shift);
+  shiftInk(model.ink, at, n);
+  const h = model.slackHead || 0;
+  if (at <= h) model.slackHead = h + n;                                   // 頭の余尺の中
+  else if (at > h + model.duration + 1) model.slack = (model.slack || 0) + n;   // 尻の余尺の中
+  else model.duration += n;                                              // 本尺
+  return true;
+}
+/* at（1始まり）から n コマ削除。跨ぐブロックは縮む、消えるブロックは削除 */
+function deleteFrames(model, at, n) {
+  at = Math.max(1, Math.round(at)); n = Math.max(0, Math.min(totalFrames(model) - at + 1, Math.round(n)));
+  if (!n) return false;
+  {
+    const h0 = model.slackHead || 0, end0 = at + n - 1;
+    const inMain0 = Math.max(0, Math.min(end0, h0 + model.duration) - Math.max(at, h0 + 1) + 1);
+    if (model.duration - inMain0 < 1) return false;     // 本尺は最短1コマ
+  }
+  const i = at - 1;
+  (model.layers || []).forEach(L => L.cells.splice(i, n));
+  (model.douga || []).forEach(L => L.cells.splice(i, n));
+  const end = at + n - 1;
+  const cut = arr => {
+    for (let j = arr.length - 1; j >= 0; j--) {
+      const b = arr[j];
+      if (b.to < at) continue;
+      if (b.from > end) { b.from -= n; b.to -= n; continue; }
+      const nf = b.from < at ? b.from : at, nt = b.to > end ? b.to - n : at - 1;
+      if (nt < nf) { arr.splice(j, 1); continue; }
+      b.from = nf; b.to = nt;
+    }
+  };
+  cut(model.dialogue || []); cut(model.camera || []);
+  shiftInk(model.ink, at, -n);
+  const h = model.slackHead || 0;
+  const overlap = (a, b) => Math.max(0, Math.min(end, b) - Math.max(at, a) + 1);
+  const inHead = overlap(1, h), inMain = overlap(h + 1, h + model.duration), inTail = n - inHead - inMain;
+  model.slackHead = h - inHead;
+  model.duration -= inMain;
+  model.slack = Math.max(0, (model.slack || 0) - inTail);
+  return true;
+}
+function shiftAnnotations(annotations, at, n) {
+  (annotations || []).forEach(a => {
+    if (!a.anchor) return;
+    if (n > 0) { if (a.anchor.komaStart >= at) { a.anchor.komaStart += n; a.anchor.komaEnd += n; } else if (a.anchor.komaEnd >= at) a.anchor.komaEnd += n; }
+    else { const m = -n, end = at + m - 1; if (a.anchor.komaEnd < at) return; if (a.anchor.komaStart > end) { a.anchor.komaStart -= m; a.anchor.komaEnd -= m; return; } a.anchor.komaStart = Math.min(a.anchor.komaStart, at); a.anchor.komaEnd = Math.max(a.anchor.komaStart, a.anchor.komaEnd > end ? a.anchor.komaEnd - m : at - 1); }
+  });
+}
+
+/* ---- テキスト記述（Auto Sheet 互換の記法）。セル: "A: 1 n n dot n 2 x x"、台詞: "0+01 | 1+04 | 話者 | 台詞"、カメラ: "0+01 | 1+00 | A | PAN | B" ---- */
+function frameToTimecode(k) { const nn = Math.max(1, Math.round(k)); return Math.floor(nn / FPS) + "+" + String(nn % FPS).padStart(2, "0"); }
+function normalizeCommandLine(line) {
+  return String(line || "").normalize("NFKC").replace(/｜/g, "|").replace(/　/g, " ");
+}
+function timecodeToFrame(str) {
+  const m = String(str || "").normalize("NFKC").trim().match(/^(\d+)\s*\+\s*(\d+)$/);
+  if (m) { const v = Number(m[1]) * FPS + Number(m[2]); return v >= 1 ? v : null; }
+  const nn = Number(String(str || "").trim());
+  return Number.isFinite(nn) && nn >= 1 ? nn : null;
+}
+function cellsToTokens(cells) {
+  const out = [];
+  let held = EMPTY;
+  for (let i = 0; i < cells.length; i++) {
+    const v = cells[i];
+    if (isTick(v)) { out.push("dot"); continue; }
+    if (v !== held || i === 0) out.push(v === EMPTY ? "x" : String(v)); else out.push("n");
+    held = v;
+  }
+  while (out.length && (out[out.length - 1] === "n" || out[out.length - 1] === "x")) out.pop();
+  return out;
+}
+function layersToText(layers) { return (layers || []).map(L => L.name + ": " + cellsToTokens(L.cells).join(" ")).join("\n"); }
+function textToLayers(text, duration) {
+  const layers = [];
+  String(text || "").split(/\r?\n/).forEach(rawLine => {
+    const line = normalizeCommandLine(rawLine);
+    const m = line.match(/^\s*([^:]+?)\s*:\s*(.*)$/);
+    if (!m) return;
+    const name = m[1].trim(); if (!name) return;
+    const toks = m[2].trim() ? m[2].trim().split(/\s+/) : [];
+    const cells = new Array(duration).fill(EMPTY);
+    let held = EMPTY;
+    for (let i = 0; i < duration; i++) {
+      const t = (toks[i] || "n").toLowerCase();
+      if (t === "n" || t === "_" || t === "-" || t === "rep" || t === "repeat" || t === "~" || t === "〜") { cells[i] = held; continue; }
+      if (t === "dot" || t === "o" || t === "○" || t === "●") { cells[i] = held === EMPTY ? EMPTY : TICK; continue; }
+      if (t === "x" || t === "×") { cells[i] = EMPTY; held = EMPTY; continue; }
+      cells[i] = toks[i]; held = toks[i];
+    }
+    layers.push({ name, cells });
+  });
+  return layers;
+}
+function dialogueToText(blocks) {
+  return (blocks || []).slice().sort((a, b) => a.from - b.from || (a.lane || 0) - (b.lane || 0)).map(b => [frameToTimecode(b.from), frameToTimecode(b.to), encodeSpeaker(b), b.text || ""].join(" | ")).join("\n");
+}
+function textToDialogue(text, duration) {
+  const out = [];
+  String(text || "").split(/\r?\n/).forEach(rawLine => {
+    const line = normalizeCommandLine(rawLine);
+    if (!line.trim() || line.trim().startsWith("#")) return;
+    const parts = line.split("|").map(x => x.trim());
+    if (parts.length < 2) return;
+    const from = timecodeToFrame(parts[0]), to = timecodeToFrame(parts[1]);
+    if (!from || !to || to < from) return;
+    const rawParts = String(rawLine).replace(/｜/g, "|").split("|").map(x => x.trim());
+    const b = Object.assign({ from: Math.min(from, duration), to: Math.min(to, duration), text: "", lane: 0 }, decodeSpeaker(parts.length >= 4 ? rawParts[2] : ""));
+    b.text = parts.length >= 4 ? rawParts.slice(3).join("|").trim() : (rawParts[2] || "");
+    out.push(b);
+  });
+  // レーン: 重ならないように 0/1 に振る（Auto Sheet の assignLanes と同じ考え）
+  const ends = [];
+  out.sort((a, b) => a.from - b.from || a.to - b.to).forEach(b => { let lane = ends.findIndex(e => b.from > e); if (lane === -1) lane = Math.min(1, ends.length); if (lane >= ends.length) ends.push(b.to); else ends[lane] = b.to; b.lane = Math.min(1, lane); });
+  return out;
+}
+function cameraToText(blocks) {
+  return (blocks || []).slice().sort((a, b) => a.from - b.from || (a.lane || 0) - (b.lane || 0)).map(b => {
+    const mid = b.kind ? (b.text ? b.kind + " " + b.text : b.kind) : (b.text || "");
+    if (!b.fromLabel && !b.toLabel) return [frameToTimecode(b.from), frameToTimecode(b.to), mid].join(" | ");
+    if (!b.toLabel) return [frameToTimecode(b.from), frameToTimecode(b.to), b.fromLabel, mid].join(" | ");
+    return [frameToTimecode(b.from), frameToTimecode(b.to), b.fromLabel || "", mid, b.toLabel].join(" | ");
+  }).join("\n");
+}
+function textToCamera(text, duration) {
+  const out = [];
+  String(text || "").split(/\r?\n/).forEach(rawLine => {
+    const line = normalizeCommandLine(rawLine);
+    if (!line.trim() || line.trim().startsWith("#")) return;
+    const parts = line.split("|").map(x => x.trim());
+    if (parts.length < 2) return;
+    const from = timecodeToFrame(parts[0]), to = timecodeToFrame(parts[1]);
+    if (!from || !to || to < from) return;
+    let b;
+    if (parts.length >= 5) { const pk = parseCameraText(parts[3]); b = { kind: pk.kind, text: pk.text, fromLabel: parts[2].toUpperCase(), toLabel: parts.slice(4).join(" ").trim().toUpperCase() }; }
+    else if (parts.length === 4) { const pk = parseCameraText(parts[3]); b = { kind: pk.kind, text: pk.text, fromLabel: parts[2].toUpperCase(), toLabel: "" }; }
+    else b = parseCameraText(parts[2] || "");
+    b.from = Math.min(from, duration); b.to = Math.min(to, duration); b.lane = 0;
+    out.push(b);
+  });
+  const ends = [];
+  out.sort((a, b) => a.from - b.from || a.to - b.to).forEach(b => { let lane = ends.findIndex(e => b.from > e); if (lane === -1) lane = Math.min(1, ends.length); if (lane >= ends.length) ends.push(b.to); else ends[lane] = b.to; b.lane = Math.min(1, lane); });
+  return out;
+}
+
+function totalFrames(model) { return (model.slackHead || 0) + model.duration + (model.slack || 0); }
+/* 内部の通し番号 k（1始まり）→ 表示番号。頭の余尺は -n〜-1、本尺は 1〜D、尻の余尺は D+1〜 */
+function displayKoma(model, k) { const h = model.slackHead || 0; return k <= h ? k - h - 1 : k - h; }
+function isSlackFrame(model, k) { const h = model.slackHead || 0; return k <= h || k > h + model.duration; }
+function fitCells(model) {
+  const total = totalFrames(model);
+  const fit = L => {
+    if (total < L.cells.length) L.cells.length = total;
+    else {
+      const last = L.cells.length ? heldBefore(L.cells, L.cells.length) : EMPTY;
+      const fill = L.cells.length && !isTick(L.cells[L.cells.length - 1]) ? L.cells[L.cells.length - 1] : last;
+      while (L.cells.length < total) L.cells.push(fill);
+    }
+  };
+  model.layers.forEach(fit);
+  (model.douga || []).forEach(fit);
+}
+function setDuration(model, n) {
+  n = Math.max(1, Math.round(Number(n) || 0));
+  if (n === model.duration) return false;
+  model.duration = n;
+  fitCells(model);
+  return true;
+}
+function setSlack(model, n) {
+  n = Math.max(0, Math.round(Number(n) || 0));
+  if (n === (model.slack || 0)) return false;
+  model.slack = n;
+  fitCells(model);
+  return true;
+}
+/* 頭の余尺: 先頭に空のコマを差し込む／抜く。台詞・カメラはずれる（朱は呼び出し側で shiftAnnotations） */
+function setSlackHead(model, n) {
+  n = Math.max(0, Math.round(Number(n) || 0));
+  const cur = model.slackHead || 0;
+  if (n === cur) return 0;
+  const delta = n - cur;
+  const all = (model.layers || []).concat(model.douga || []);
+  if (delta > 0) {
+    all.forEach(L => L.cells.splice(0, 0, ...new Array(delta).fill(EMPTY)));
+    const shift = b => { b.from += delta; b.to += delta; };
+    (model.dialogue || []).forEach(shift); (model.camera || []).forEach(shift);
+    shiftInk(model.ink, 1, delta);
+  } else {
+    const m = -delta;
+    shiftInk(model.ink, 1, delta);
+    all.forEach(L => L.cells.splice(0, m));
+    const cut = arr => { for (let j = arr.length - 1; j >= 0; j--) { const b = arr[j]; b.from -= m; b.to -= m; if (b.to < 1) { arr.splice(j, 1); continue; } if (b.from < 1) b.from = 1; } };
+    cut(model.dialogue || []); cut(model.camera || []);
+  }
+  model.slackHead = n;
+  return delta;
+}
+
+function nextLayerName(model) {
+  const used = new Set(model.layers.map(L => L.name));
+  const lower = model.layers.some(L => /^[a-z]$/.test(L.name)) && !model.layers.some(L => /^[A-Z]$/.test(L.name));
+  for (let i = 0; i < 26; i++) { const c = String.fromCharCode((lower ? 97 : 65) + i); if (!used.has(c)) return c; }
+  return "L" + (model.layers.length + 1);
+}
+
+function cloneModel(model) { return JSON.parse(JSON.stringify(model)); }
+
+/* fieldId 3/5 のトラック → ブロック（開始値＋SYMBOL_HYPHEN の連なりを1ブロックに） */
+function framesToBlocks(field, duration, isDialogue) {
+  const out = [];
+  if (!field || !Array.isArray(field.tracks)) return out;
+  field.tracks.forEach((track, ti) => {
+    const lane = Number.isFinite(Number(track.trackNo)) ? Number(track.trackNo) : ti;
+    const frames = (track.frames || []).filter(e => e && Number.isFinite(Number(e.frame))).slice().sort((a, b) => a.frame - b.frame);
+    let cur = null;
+    const flush = () => { if (cur) out.push(cur); cur = null; };
+    frames.forEach(e => {
+      const fr = Number(e.frame);
+      if (fr < 0 || fr >= duration) return;
+      const vals = ((e.data || [])[0] || {}).values || [];
+      const first = vals.length ? String(vals[0] == null ? "" : vals[0]) : "";
+      if (first === "SYMBOL_HYPHEN") { if (cur && fr === cur.to) cur.to = fr + 1; return; }   // to は1始まり
+      flush();
+      if (!first || /^SYMBOL_/.test(first)) return;
+      cur = isDialogue
+        ? Object.assign({ from: fr + 1, to: fr + 1, text: vals.slice(1).map(v => String(v == null ? "" : v)).join(" "), lane: Math.min(1, Math.max(0, lane)) }, decodeSpeaker(vals[0]))
+        : Object.assign({ from: fr + 1, to: fr + 1, lane: Math.min(1, Math.max(0, lane)) }, cameraFromTdtsValue(vals.map(v => String(v == null ? "" : v)).join(" ")));
+    });
+    flush();
+  });
+  return out;
+}
+/* xdts/tdts の本文（1行目ヘッダー付き）から台詞欄・カメラ欄を拾う */
+function parseAuxBlocks(text) {
+  try {
+    const body = String(text || "").replace(/^[^\n{]*\r?\n/, "");
+    let doc = JSON.parse(body);
+    if (doc.timeSheets) doc = doc.timeSheets[0] || {};
+    const tt = (doc.timeTables || [])[0] || {};
+    const D = Number(tt.duration) || 0;
+    const f3 = (tt.fields || []).find(f => f.fieldId === 3), f5 = (tt.fields || []).find(f => f.fieldId === 5);
+    return { dialogue: framesToBlocks(f3, D, true), camera: framesToBlocks(f5, D, false) };
+  } catch (e) { return { dialogue: [], camera: [] }; }
+}
+
+/* 動画欄を原画欄から作る（東映DTS「すべての原画を動画に一括変換」相当）:
+   原画の番号と中割○にそれぞれ通し番号、ホールドは継続、空は × */
+function dougaFromGenga(layers) {
+  return (layers || []).map(L => {
+    const out = new Array(L.cells.length).fill(EMPTY);
+    let n = 0, cur = EMPTY;
+    for (let i = 0; i < L.cells.length; i++) {
+      const v = L.cells[i];
+      if (isTick(v)) { n++; cur = String(n); out[i] = cur; continue; }
+      if (isChangePoint(L.cells, i)) { if (isEmptyCell(v)) cur = EMPTY; else { n++; cur = String(n); } }
+      out[i] = cur;
+    }
+    return { name: L.name, cells: out };
+  });
+}
+
+/* ブロック（台詞・カメラ）の編集: 同じレーンの隣と重ならない範囲で置く・伸ばす・動かす */
+function laneNeighbors(blocks, b) {
+  const same = blocks.filter(x => x !== b && (x.lane || 0) === (b.lane || 0));
+  const prev = same.filter(x => x.to < b.from).sort((x, y) => y.to - x.to)[0] || null;
+  const next = same.filter(x => x.from > b.to).sort((x, y) => x.from - y.from)[0] || null;
+  return { prev, next };
+}
+function setBlockEnd(blocks, b, to, duration) {
+  const { next } = laneNeighbors(blocks, b);
+  const hi = next ? next.from - 1 : duration;
+  b.to = Math.max(b.from, Math.min(hi, to));
+}
+function setBlockStart(blocks, b, from) {
+  const { prev } = laneNeighbors(blocks, b);
+  const lo = prev ? prev.to + 1 : 1;
+  b.from = Math.min(b.to, Math.max(lo, from));
+}
+function moveBlock(blocks, b, from, duration) {
+  const len = b.to - b.from;
+  const { prev, next } = laneNeighbors(blocks, b);
+  const lo = prev ? prev.to + 1 : 1;
+  const hi = (next ? next.from - 1 : duration) - len;
+  const f = Math.max(lo, Math.min(hi, from));
+  b.from = f; b.to = f + len;
+}
+function freeSpanAt(blocks, lane, k, duration) {
+  const same = blocks.filter(x => (x.lane || 0) === lane);
+  if (same.some(x => k >= x.from && k <= x.to)) return null;
+  const next = same.filter(x => x.from > k).sort((a, b) => a.from - b.from)[0];
+  return { from: k, to: Math.min(duration, next ? next.from - 1 : duration, k + 23) };
+}
+
+/* inspect / 描画が読む「パース済み風」の形をモデルから作る（inspect は parsed を受ける契約のまま） */
+function ttFromModel(model, name) {
+  return {
+    name: name || "sheet1",
+    duration: model.duration,
+    layers: model.layers.map((L, i) => ({
+      trackNo: i, layerName: L.name, expanded: L.cells.slice(),
+      usedCells: [...new Set(L.cells)].filter(c => !isEmptyCell(c) && !/^SYMBOL_/.test(c)),
+    })),
+  };
+}
+
+/* ========= VDTS 文書（正本。履歴・朱・原本を1ファイルに） =========
+   1行目は DTS 系の慣習どおり識別ヘッダー、2行目以降 JSON。
+   sheet = 現在の状態（内部モデル）、history = 受け渡しごとのスナップショット（追記のみ）、
+   annotations = 朱（レイヤー名＋コマ範囲にアンカー）、extensions = 受け取った原本の生データ */
+
+const VDTS_HEADER = "versionedDigitalTimeSheet Save Data";
+const VDTS_ROLES = ["原画", "作監", "演出", "動画", "動検", "仕上", "撮影", "進行", "その他"];
+
+const HEAD_FIELDS = ["title", "episode", "scene", "cut", "author", "memo"];
+function normalizeSheet(sheet) {
+  sheet.layers = sheet.layers || [];
+  sheet.slack = Math.max(0, Math.round(Number(sheet.slack) || 0));         // 尻の余尺（コマ）。MV や O.L 用ののりしろ。薄いグレーで描く
+  sheet.slackHead = Math.max(0, Math.round(Number(sheet.slackHead) || 0)); // 頭の余尺
+  const total = sheet.slackHead + sheet.duration + sheet.slack;
+  const fit = L => { if (L.cells.length < total) { const last = L.cells.length ? L.cells[L.cells.length - 1] : EMPTY; while (L.cells.length < total) L.cells.push(isTick(last) ? heldBefore(L.cells, L.cells.length) : last); } else if (L.cells.length > total) L.cells.length = total; };
+  sheet.layers.forEach(fit);
+  (sheet.douga || []).forEach(fit);
+  sheet.douga = Array.isArray(sheet.douga) ? sheet.douga : [];
+  sheet.dialogue = Array.isArray(sheet.dialogue) ? sheet.dialogue : [];
+  sheet.camera = Array.isArray(sheet.camera) ? sheet.camera : [];
+  sheet.ink = Array.isArray(sheet.ink) ? sheet.ink : [];        // 手書きの線（ベクトル）。zone: "sheet"（マス単位）／"memo"（上段メモ欄の相対座標）
+  return sheet;
+}
+/* 手書きの線: {id, zone, color, width, who, role, at, points:[{c, fx, y, p}…]}
+   zone "sheet": c＝列のキー（"koma" / "g:0" / "s:1" / "d:0" / "c:1" / "lane"）、fx＝その列の中の左からの割合、y＝コマ座標（1コマ目の上辺が 0、実数）、p＝筆圧
+   zone "memo" : c は無し、fx・y ともメモ欄の幅・高さに対する割合 */
+const INK_COLORS = { black: "#1e2b33", shu: "#c7361f", blue: "#2e6fa3", green: "#2b7a3a" };
+function shiftInk(ink, at, nn) {
+  // シート上の線をコマ単位でずらす（挿入 nn>0 ／ 削除 nn<0）。削除範囲に入った点は範囲の頭へ寄せる
+  (ink || []).forEach(st => {
+    if (st.zone !== "sheet") return;
+    st.points.forEach(pt => {
+      const yk = pt.y + 1;   // 1始まりのコマ番号（実数）
+      if (nn > 0) { if (yk >= at) pt.y += nn; }
+      else { const m = -nn, end = at + m; if (yk >= end) pt.y -= m; else if (yk >= at) pt.y = at - 1; }
+    });
+  });
+}
+/* 文書全体の同一性（版を重ねる判定用）: セル欄の指紋＋動画欄＋台詞＋カメラ＋上段 */
+function docFingerprint(doc) {
+  const sh = doc.sheet;
+  return "sha256:" + sha256Hex([modelFingerprint(sh), JSON.stringify(sh.douga || []), JSON.stringify(sh.dialogue || []), JSON.stringify(sh.camera || []), JSON.stringify(sh.ink || []), JSON.stringify(doc.cut || {})].join("|"));
+}
+function newDoc(model, meta) {
+  const m = meta || {};
+  return {
+    format: "vdts", version: "0.1",
+    cut: { title: m.title || "", episode: m.episode || "", scene: m.scene || "", cut: m.cut || "", author: m.author || "", memo: m.memo || "", fps: FPS },
+    sheet: normalizeSheet(cloneModel(model)),
+    history: [],
+    annotations: [],
+    extensions: m.extensions || {},
+  };
+}
+
+const PAGE_FRAMES = 144;
+function pageCount(duration) { return Math.max(1, Math.ceil((Number(duration) || 0) / PAGE_FRAMES)); }
+
+/* 東映DTSの「話数／サブタイトル」欄。"abc#07" のように 作品略称#話数 で書かれていれば分ける（# が無ければ話数欄にそのまま） */
+function fmtEpisode(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(2, "0") : t; }
+function fmtCut(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(3, "0") : t; }
+function fmtScene(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(2, "0") : t; }
+function splitDtsEpisode(str) {
+  const raw = String(str || "").trim();
+  const m = raw.match(/^(.*?)\s*#\s*(\S.*)$/);
+  if (m && m[1]) return { title: m[1].trim(), episode: m[2].trim() };
+  return { title: "", episode: raw };
+}
+function joinDtsEpisode(cut) {
+  const t = String(cut.title || "").trim(), e = fmtEpisode(cut.episode);
+  if (t && e) return t + "#" + e;
+  return e || t;
+}
+
+function nowIso() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  const off = -d.getTimezoneOffset(), sign = off >= 0 ? "+" : "-", a = Math.abs(off);
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+    "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()) +
+    sign + p(Math.floor(a / 60)) + ":" + p(a % 60);
+}
+
+/* 受け渡し＝履歴に1件重ねる。直前の版と同じ内容なら重ねない（返り値 false） */
+function commitDoc(doc, info) {
+  const fp = docFingerprint(doc);
+  const last = doc.history[doc.history.length - 1];
+  if (last && last.fingerprint === fp && !(info && info.force)) return false;
+  doc.history.push({
+    id: doc.history.length + 1,
+    at: (info && info.at) || nowIso(),
+    who: (info && info.who) || "",
+    role: (info && info.role) || "",
+    note: (info && info.note) || "",
+    fingerprint: fp,
+    sheet: cloneModel(doc.sheet),
+  });
+  return true;
+}
+
+/* 2つのシートの差分: 尺・レイヤーの増減・セルの違うコマ（1始まり） */
+function diffSheets(a, b) {
+  const out = { duration: a.duration === b.duration ? null : [a.duration, b.duration], layers: {} };
+  const an = new Map(a.layers.map(L => [L.name, L]));
+  const bn = new Map(b.layers.map(L => [L.name, L]));
+  const names = [...new Set([...an.keys(), ...bn.keys()])];
+  names.forEach(n => {
+    const A = an.get(n), B = bn.get(n);
+    if (!A) { out.layers[n] = { added: true }; return; }
+    if (!B) { out.layers[n] = { removed: true }; return; }
+    const komas = [];
+    const len = Math.max(A.cells.length, B.cells.length);
+    for (let i = 0; i < len; i++) if ((A.cells[i] === undefined ? EMPTY : A.cells[i]) !== (B.cells[i] === undefined ? EMPTY : B.cells[i])) komas.push(i + 1);
+    if (komas.length) out.layers[n] = { komas };
+  });
+  out.slack = ((a.slack || 0) !== (b.slack || 0) || (a.slackHead || 0) !== (b.slackHead || 0)) ? [(a.slackHead || 0) + "+" + (a.slack || 0), (b.slackHead || 0) + "+" + (b.slack || 0)] : null;
+  out.douga = JSON.stringify(a.douga || []) !== JSON.stringify(b.douga || []);
+  out.dialogue = JSON.stringify(a.dialogue || []) !== JSON.stringify(b.dialogue || []);
+  out.camera = JSON.stringify(a.camera || []) !== JSON.stringify(b.camera || []);
+  out.ink = JSON.stringify(a.ink || []) !== JSON.stringify(b.ink || []);
+  return out;
+}
+function diffIsEmpty(d) { return !d.duration && !d.slack && Object.keys(d.layers).length === 0 && !d.douga && !d.dialogue && !d.camera && !d.ink; }
+
+function writeVdts(doc) { return VDTS_HEADER + "\n" + JSON.stringify(doc, null, 1); }
+function parseVdts(text) {
+  const body = text.replace(/^versionedDigitalTimeSheet Save Data\r?\n/, "");
+  const doc = JSON.parse(body);
+  if (doc.format !== "vdts" || !doc.sheet || !Array.isArray(doc.sheet.layers)) throw new Error("vdts ではありません");
+  doc.history = Array.isArray(doc.history) ? doc.history : [];
+  doc.annotations = Array.isArray(doc.annotations) ? doc.annotations : [];
+  doc.extensions = doc.extensions || {};
+  doc.cut = doc.cut || {};
+  HEAD_FIELDS.forEach(f => { if (doc.cut[f] == null) doc.cut[f] = ""; });
+  doc.cut.fps = FPS;
+  normalizeSheet(doc.sheet);
+  doc.sheet.layers.forEach(L => { L.cells = L.cells.map(v => isEmptyCell(v) ? EMPTY : String(v)); });
+  doc.sheet.douga.forEach(L => { L.cells = L.cells.map(v => isEmptyCell(v) ? EMPTY : String(v)); });
+  return doc;
+}
+
+/* 東映 .tdts / CSP .xdts のどちらでも読む（tdts は timeSheets[0] を剥がして xdts と同じ形にする） */
+function isTdtsText(text) { return /^toeiDigitalTimeSheet Save Data/.test(text); }
+function parseAnyTimesheet(text) {
+  if (isTdtsText(text)) {
+    const body = text.replace(/^toeiDigitalTimeSheet Save Data\r?\n/, "");
+    const doc = JSON.parse(body);
+    const sheet = (doc.timeSheets || [])[0] || {};
+    const xdtsLike = { timeTables: sheet.timeTables || [], version: doc.version, header: sheet.header || {} };
+    const tt0 = (sheet.timeTables || [])[0] || {};
+    return { parsed: parseXdts("exchangeDigitalTimeSheet Save Data\n" + JSON.stringify(xdtsLike)), header: sheet.header || {}, kind: "tdts", raw: doc,
+      extra: { author: tt0.operatorName || "", memo: tt0.direction || "" } };
+  }
+  const body = text.replace(/^exchangeDigitalTimeSheet Save Data\r?\n/, "");
+  let header = {};
+  try { header = JSON.parse(body).header || {}; } catch (e) { /* parseXdts が投げる */ }
+  return { parsed: parseXdts(text), header, kind: "xdts", raw: null, extra: {} };
+}
+
+/* ========= tdts ライター（東映DTS version 7 の実物を写す。auto-sheet ver863 と同じ写像） =========
+   履歴を timeSheets[] に sheet2, sheet3… として並べる選択肢を持つ（DTS 側での見え方は未検証） */
+const TDTS_FONT_COLORS = [[0,0,0],[224,0,0],[32,128,32],[32,32,192],[192,32,192],[255,128,32]];
+function tdtsCellsToFrames(cells) {
+  const frames = [];
+  let held;
+  cells.forEach((v, i) => {
+    if (isTick(v)) { frames.push({ data: [{ fontColorId: 0, id: 0, values: [v] }], frame: i }); return; }
+    const w = v === EMPTY ? "SYMBOL_NULL_CELL" : String(v);
+    if (frames.length && w === held) return;
+    frames.push({ data: [{ fontColorId: 0, id: 0, values: [w] }], frame: i });
+    held = w;
+  });
+  if (!frames.length) frames.push({ data: [{ fontColorId: 0, id: 0, values: ["SYMBOL_NULL_CELL"] }], frame: 0 });
+  if (held !== undefined && held !== "SYMBOL_NULL_CELL") frames.push({ data: [{ fontColorId: 0, id: 0, values: ["SYMBOL_NULL_CELL"] }], frame: cells.length });
+  return frames;
+}
+function tdtsTimeTable(model, name, operator, direction, o) {
+  const layers = exportLayers(model, o);
+  return {
+    books: [{ fieldId: 0, tracks: [] }],
+    color: 0,
+    direction: direction || "",
+    duration: (model.slackHead || 0) + model.duration + (model.slack || 0),
+    fields: [
+      { fieldId: 0, tracks: layers.map((L, i) => L.cells.some(v => v !== EMPTY) ? { frames: tdtsCellsToFrames(L.cells), trackNo: i } : null).filter(Boolean) },
+      { fieldId: 3, tracks: auxTracks(model, 3, true).map(t => ({ frames: t.frames, trackNo: t.trackNo })) },
+      { fieldId: 5, tracks: auxTracks(model, 5, true).map(t => ({ frames: t.frames, trackNo: t.trackNo })) },
+    ],
+    name: name || "sheet1",
+    operatorName: operator || "",
+    timeTableHeaders: [
+      { fieldId: 0, names: layers.map(L => L.name) },
+      { fieldId: 1, names: [""] }, { fieldId: 2, names: [""] },
+      { fieldId: 3, names: ["S1", "S2"] }, { fieldId: 4, names: [] }, { fieldId: 5, names: ["1", "2"] },
+    ],
+  };
+}
+function writeTdts(doc, opts) {
+  const o = opts || {};
+  const emptyProcess = () => ({ assistant: "", chief: "", director: "", free: "", freeRole: "" });
+  const emptyWork = () => ({ enable: false, tracks: [0,1,2,3,4,5,6].map(() => ({ artist: "", numberOfSheets: 0 })) });
+  const header = {
+    cut: fmtCut(doc.cut.cut), episode: joinDtsEpisode(doc.cut), scene: fmtScene(doc.cut.scene),
+    showHeaderDummy: false,
+    timeTableFontColors: TDTS_FONT_COLORS.map(c => c.slice()),
+    workSlip: { memo: "", processes: [emptyProcess(), emptyProcess(), emptyProcess()], works: [emptyWork(), emptyWork()] },
+  };
+  const last = doc.history[doc.history.length - 1];
+  const author = doc.cut.author || (last ? last.who : "");
+  const timeSheets = [{ header, timeTables: [tdtsTimeTable(doc.sheet, "sheet1", author, doc.cut.memo || o.direction || "", o)] }];
+  if (o.withHistory) {
+    doc.history.slice().reverse().forEach((h, i) => {
+      timeSheets.push({ header, timeTables: [tdtsTimeTable(h.sheet, "sheet" + (i + 2), h.who, [h.role, h.at, h.note].filter(Boolean).join(" "), o)] });
+    });
+  }
+  return "toeiDigitalTimeSheet Save Data\n" + JSON.stringify({ timeSheets, version: o.version || 7 }, null, 2);
+}
+
+/* ========= フォルダ監視・ファイル ========= */
+
+const state = {
+  files: new Map(),        // name -> { handle, mtime, kind: "xdts"|"tdts"|"vdts", result }
+  memoFiles: new Map(),    // 旧サイドカー（.xdts.memo.json）: 落とされたら朱として取り込む
+  ledger: [],
+  ledgerSource: "none",
+  selectedPath: null,
+  // 開いている文書
+  doc: null,               // VDTS 文書（正本）
+  src: null,               // { path, basename, kind, handle, dir, mtime, vdtsHandle }
+  dirty: false,
+  extChanged: false,
+  undo: [], redo: [],
+  viewVersion: null,       // 履歴の index を表示中なら number（その版のシートを描き、今との差分に印。編集は不可）
+  session: { who: "", role: "" },
+  cutMode: false,
+  shakuSel: null,
+  ink: { color: "shu", width: "thin", eraser: false },   // 手書きの道具（上段のメモ欄の中だけ）
+  sheetDom: null,          // { table, tbody, cellsByKey, shape:{duration, layerCount} }
+};
+
+const $ = id => document.getElementById(id);
+const main = $("mainPane");
+
+/* ---------- 開く ---------- */
+
+/* 新規作成: 空のシート（3秒・A/B/C の3列）。上段の尺・列名・カットは後からその場で書く。保存時に .vdts の置き場所を聞く */
+$("newBtn").addEventListener("click", async () => {
+  if (!(await confirmDiscardIfDirty())) return;
+  const model = { duration: 24 * 3, slack: 0, slackHead: 0, layers: ["A", "B", "C"].map(nm => ({ name: nm, cells: new Array(24 * 3).fill(EMPTY) })) };
+  const doc = newDoc(model, {});
+  commitDoc(doc, { who: state.session.who, role: state.session.role, note: "新規作成" });
+  let base = "新規シート", name = base + ".vdts", i = 2;
+  while (state.files.has(name)) { name = base + i + ".vdts"; i++; }
+  const text = writeVdts(doc);
+  const rec = { handle: null, mtime: Date.now(), kind: "vdts", result: null };
+  state.files.set(name, rec);
+  inspectText(name, rec, text, rec.mtime);
+  detachTextPanel(); closeInlineEditor({ silent: true }); closePopups();
+  state.undo = []; state.redo = []; state.dirty = true; state.viewVersion = null; state.sheetDom = null;
+  state.doc = doc;
+  state.src = { path: name, basename: name, kind: "vdts", handle: null, mtime: rec.mtime, originalName: name, originalHandle: null, originalKind: "vdts" };
+  state.selectedPath = name;
+  render();
+});
+
+$("openBtn").addEventListener("click", async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [fh] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "タイムシート", accept: { "application/octet-stream": [".xdts", ".tdts", ".vdts"] } }] });
+      const file = await fh.getFile();
+      await openStandaloneFile(file, fh);
+    } catch (e) { if (e.name !== "AbortError") showError("開けません: " + e.message); }
+    return;
+  }
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = ".xdts,.tdts,.vdts";
+  inp.addEventListener("change", async () => { if (inp.files[0]) await openStandaloneFile(inp.files[0], null); });
+  inp.click();
+});
+
+main.addEventListener("dragover", e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); main.classList.add("drop-active"); } });
+main.addEventListener("dragleave", () => main.classList.remove("drop-active"));
+main.addEventListener("drop", async e => {
+  main.classList.remove("drop-active");
+  const files = e.dataTransfer ? [...e.dataTransfer.files] : [];
+  if (!files.length) return;
+  e.preventDefault();
+  for (const f of files) {
+    if (/\.memo\.json$/i.test(f.name)) { const rec = { mtime: f.lastModified, data: null, error: null }; readMemo(f.name, rec, await f.text()); state.memoFiles.set(f.name, rec); continue; }
+    if (/\.csv$/i.test(f.name)) { applyLedger(await f.text(), f.name); reinspectAll(); render(); continue; }
+    if (!/\.(xdts|tdts|vdts)$/i.test(f.name)) continue;
+    let handle = null;
+    const item = [...e.dataTransfer.items].find(it => it.kind === "file" && it.getAsFile() && it.getAsFile().name === f.name);
+    if (item && item.getAsFileSystemHandle) { try { handle = await item.getAsFileSystemHandle(); } catch (err) { handle = null; } }
+    await openStandaloneFile(f, handle);
+  }
+});
+
+/* 開いている文書があるときに xdts/tdts を持ち込んだら、「今の文書に取り込む」を先に選べる:
+   CSP でタイミングを直して書き出した xdts を、履歴・朱・動画欄・余尺を保ったまま原画欄（と台詞・カメラがあればそれも）に差し替え、版を1つ重ねる */
+async function importIntoCurrent(file) {
+  const doc = state.doc; if (!doc) return false;
+  const text = await file.text();
+  let r;
+  try { r = parseAnyTimesheet(text); } catch (e) { showError("読めません: " + e.message); return true; }
+  const tt = r.parsed && r.parsed[0]; if (!tt) { showError("タイムテーブルがありません"); return true; }
+  const model = modelFromParsed(tt);
+  extraLayerNamesFromText(text).forEach(nm => { if (!model.layers.some(L => L.name === nm)) model.layers.push({ name: nm, cells: new Array(model.duration).fill(EMPTY) }); });
+  pushUndo();
+  const sh = doc.sheet;
+  const slackTotal = (sh.slackHead || 0) + (sh.slack || 0);
+  // 持ち込んだ尺が今の総尺と同じなら余尺はそのまま、違えば持ち込んだ尺を本尺にして余尺は付け直す
+  if (model.duration === totalFrames(sh)) { /* 余尺を保つ */ }
+  else { sh.duration = model.duration; sh.slackHead = 0; sh.slack = 0; }
+  sh.layers = model.layers.map(L => ({ name: L.name, cells: L.cells.slice() }));
+  const aux = parseAuxBlocks(text);
+  if (aux.dialogue.length) sh.dialogue = aux.dialogue;
+  if (aux.camera.length) sh.camera = aux.camera;
+  normalizeSheet(sh);
+  doc.extensions[r.kind === "tdts" ? "toei" : "xdts"] = { source: file.name, text, importedAt: nowIso() };
+  commitDoc(doc, { who: state.session.who, role: state.session.role, note: "取り込み: " + file.name, force: true });
+  state.viewVersion = null; state.sheetDom = null;
+  markDirty(); renderMain();
+  setStatus(false, `取り込み: ${file.name} を原画欄に差し替え、版 ${doc.history.length} を重ねた（履歴・朱・動画欄はそのまま）`);
+  return true;
+}
+
+async function openStandaloneFile(file, handle) {
+  const kind = /\.vdts$/i.test(file.name) ? "vdts" : /\.tdts$/i.test(file.name) ? "tdts" : "xdts";
+  if (!(await confirmDiscardIfDirty())) return;
+  const path = file.name;
+  const rec = { handle, mtime: file.lastModified, kind, result: null };
+  state.files.set(path, rec);
+  inspectText(path, rec, await file.text(), file.lastModified);
+  state.selectedPath = path;
+  loadDocFromRec(path, rec);
+  render();
+}
+
+/* テキストコマンド ⇄ モデルの同期。書いている間はその欄を作り直さない。1回の記入（フォーカス中）＝1手 */
+const textSync = { applying: false, snap: null, timer: null, docKey: null };
+/* 文書を切り替える前に呼ぶ: 書きかけのテキストコマンドを前の文書で確定させ、遅延適用が新しい文書に流れ込まないようにする */
+function detachTextPanel() {
+  clearTimeout(textSync.timer); textSync.timer = null;
+  ["dialogueText", "cameraText"].forEach(id => { const el = $(id); if (el && document.activeElement === el) el.blur(); });
+  textSync.snap = null; textSync.docKey = null;
+}
+function refreshTextPanel(force) {
+  const panel = $("textPanel"); if (!panel) return;
+  if (!state.doc) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const sh = state.doc.sheet;
+  const set = (id, val) => { const el = $(id); if (el && (force || document.activeElement !== el) && el.value !== val) el.value = val; };
+  set("dialogueText", dialogueToText(sh.dialogue));
+  set("cameraText", cameraToText(sh.camera));
+}
+function applyTextPanel(which) {
+  const doc = state.doc; if (!doc || isBrowsing()) return;
+  if (textSync.docKey && state.src && textSync.docKey !== state.src.path) { textSync.snap = null; textSync.docKey = null; return; }   // 別の文書に切り替わっていたら捨てる
+  const sh = doc.sheet;
+  if (!textSync.snap) { textSync.snap = JSON.stringify(sh); textSync.docKey = state.src ? state.src.path : null; }
+  if (which === "dialogue") sh.dialogue = textToDialogue($("dialogueText").value, sh.duration);
+  else if (which === "camera") sh.camera = textToCamera($("cameraText").value, sh.duration);
+  state.sheetDom = state.sheetDom && state.sheetDom.shape.layerCount === sh.layers.length ? state.sheetDom : null;
+  markDirty(); renderSheetDom(); renderChecks();
+}
+["dialogue", "camera"].forEach(which => {
+  const el = $(which + "Text");
+  el.addEventListener("focus", () => { textSync.docKey = state.src ? state.src.path : null; });
+  el.addEventListener("input", () => { clearTimeout(textSync.timer); textSync.timer = setTimeout(() => applyTextPanel(which), 200); });
+  el.addEventListener("blur", () => { clearTimeout(textSync.timer); applyTextPanel(which); if (textSync.snap && textSync.snap !== JSON.stringify(state.doc && state.doc.sheet)) { state.undo.push(textSync.snap); state.redo = []; renderTools(); } textSync.snap = null; refreshTextPanel(); });
+});
+
+$("fileList").addEventListener("click", async e => {
+  const btn = e.target.closest("[data-path]");
+  if (!btn) return;
+  if (btn.dataset.path === state.selectedPath) return;
+  if (!(await confirmDiscardIfDirty())) return;
+  state.selectedPath = btn.dataset.path;
+  loadDocFromRec(state.selectedPath, state.files.get(state.selectedPath));
+  render();
+});
+
+async function confirmDiscardIfDirty() {
+  if (!state.dirty) return true;
+  return window.confirm("保存していない編集があります。捨てて進みますか？");
+}
+
+function applyLedger(text, source) {
+  const rows = parseLedger(text);
+
+  state.ledger = rows;
+  state.ledgerSource = rows.length ? source : "none";
+
+}
+
+/* 検品本体。xdts/tdts はパース、vdts は正本として読む */
+function inspectText(path, rec, text, mtime) {
+  const basename = path.split("/").pop();
+  try {
+    let parsed, doc = null, header = {};
+    if (rec.kind === "vdts") {
+      doc = parseVdts(text);
+      parsed = [ttFromModel(doc.sheet, basename)];
+      header = { cut: doc.cut.cut, episode: doc.cut.episode, scene: doc.cut.scene };
+    } else {
+      const r = parseAnyTimesheet(text);
+      parsed = r.parsed; header = r.header;
+      rec.rawText = text;
+      rec.extra = r.extra || {};
+    }
+    const entry = matchLedger(basename, state.ledger);
+    const prevNg = rec.result ? rec.result.ng : null;
+    rec.result = { parsed, entry, basename, path, mtime, header, doc, text,
+      fingerprint: parsed[0] ? sheetFingerprint(parsed[0]) : null,
+      ...inspect(parsed, entry) };
+    if (rec.result.ng && prevNg !== true) notifyNg(rec.result);
+  } catch (e) {
+    rec.result = { basename, path, mtime, parseError: e.message, ng: true, checks: [{ level: "bad", text: "読み取り失敗: " + e.message }] };
+  }
+}
+
+function reinspectAll() {
+  for (const rec of state.files.values()) {
+    if (!rec.result || rec.result.parseError) continue;
+    const entry = matchLedger(rec.result.basename, state.ledger);
+    Object.assign(rec.result, { entry }, inspect(rec.result.parsed, entry));
+  }
+}
+
+function notifyNg(result) {
+  const bad = result.checks.find(c => c.level === "bad");
+  const title = "検品 NG: " + (result.entry ? "C-" + result.entry.key : result.basename);
+  const body = bad ? bad.text : "要確認";
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  new Notification(title, { body });
+}
+
+/* ========= 旧サイドカー（.memo.json）は読み取りのみ。朱として文書へ取り込む ========= */
+const MEMO_KINDS = {
+  shusei: { label: "修正", cls: "mk-shusei" },
+  moushiokuri: { label: "申し送り", cls: "mk-moushiokuri" },
+  kakunin: { label: "要確認", cls: "mk-kakunin" },
+};
+function memoKind(kind) { return MEMO_KINDS[kind] || { label: String(kind), cls: "mk-kakunin" }; }
+function readMemo(path, rec, text) {
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data.memos)) throw new Error("memos 配列がありません");
+    rec.data = data; rec.error = null;
+  } catch (e) { rec.data = null; rec.error = e.message; }
+}
+function memoRecFor(xdtsPath) { return state.memoFiles.get(xdtsPath + ".memo.json") || null; }
+
+/* ========= 文書の出し入れ ========= */
+
+function loadDocFromRec(path, rec) {
+  detachTextPanel();
+  closeInlineEditor({ silent: true });
+  closePopups();
+  state.undo = []; state.redo = []; state.dirty = false; state.extChanged = false; state.viewVersion = null;
+  state.sheetDom = null;
+  if (!rec || !rec.result || rec.result.parseError) { state.doc = null; state.src = null; return; }
+  const r = rec.result;
+  const basename = r.basename;
+  const stem = basename.replace(/\.(xdts|tdts|vdts)$/i, "");
+  let doc;
+  if (rec.kind === "vdts") {
+    doc = JSON.parse(JSON.stringify(r.doc));
+  } else {
+    const model = modelFromParsed(r.parsed[0]);
+    // 見出しにはあるがトラックの無い列（東映DTSは空列のトラックを書かない）を空の列として復元する
+    extraLayerNamesFromText(r.text).forEach(n => { if (!model.layers.some(L => L.name === n)) model.layers.push({ name: n, cells: new Array(model.duration).fill(EMPTY) }); });
+    const aux = parseAuxBlocks(r.text);
+    model.dialogue = aux.dialogue; model.camera = aux.camera;
+    const cutGuess = (r.header && r.header.cut) || (r.entry ? r.entry.key : "") || (stem.match(/(\d{2,4})(?!.*\d)/) || [])[1] || "";
+    // 東映DTSの上段は「話数／サブタイトル」が1欄（実物では "略称#話数" の形）。作品名と話数に分けて持ち、書き戻すときは元の形に戻す
+    const ep = splitDtsEpisode((r.header && r.header.episode) || "");
+    doc = newDoc(model, { cut: cutGuess, episode: ep.episode, title: ep.title, scene: (r.header && r.header.scene) || "",
+      author: (rec.extra && rec.extra.author) || "", memo: (rec.extra && rec.extra.memo) || "" });
+    doc.extensions[rec.kind === "tdts" ? "toei" : "xdts"] = { source: basename, text: r.text };
+    // 旧サイドカーの朱を取り込む
+    const memoRec = memoRecFor(path);
+    if (memoRec && memoRec.data) {
+      memoRec.data.memos.forEach(m => doc.annotations.push({
+        id: m.id || ("a" + (doc.annotations.length + 1)), kind: m.kind || "kakunin", who: m.author || "", role: "",
+        at: m.createdAt || "", anchor: m.target ? { layer: m.target.layer, komaStart: m.target.komaStart, komaEnd: m.target.komaEnd } : null,
+        text: m.body || "", state: m.resolved ? "済" : "要", madeAgainst: 0, resolvedIn: m.resolved ? 0 : null,
+      }));
+    }
+    commitDoc(doc, { who: "", role: "", note: "取り込み: " + basename });
+  }
+  state.doc = doc;
+  state.src = { path, basename, kind: rec.kind, handle: rec.handle, mtime: rec.mtime, originalName: basename, originalHandle: rec.handle, originalKind: rec.kind };
+  const last = doc.history[doc.history.length - 1];
+  if (last && last.who && !state.session.who) state.session.who = last.who;
+  if (last && last.role && !state.session.role) state.session.role = last.role;
+}
+
+function extraLayerNamesFromText(text) {
+  try {
+    const body = String(text || "").replace(/^[^\n{]*\r?\n/, "");
+    let doc = JSON.parse(body);
+    if (doc.timeSheets) doc = doc.timeSheets[0] || {};
+    const tt = (doc.timeTables || [])[0] || {};
+    const names = (((tt.timeTableHeaders || []).find(h => h.fieldId === 0) || {}).names) || [];
+    return names.map(n => String(n || "").trim()).filter(Boolean);
+  } catch (e) { return []; }
+}
+
+function currentTT() { return state.doc ? ttFromModel(state.doc.sheet, state.src ? state.src.basename : "sheet1") : null; }
+function currentEntry() {
+  if (!state.src) return null;
+  const rec = state.files.get(state.src.path);
+  const byName = rec && rec.result ? rec.result.entry : null;
+  if (byName) return byName;
+  const cut = state.doc && state.doc.cut && state.doc.cut.cut;
+  return cut ? matchLedger(String(cut) + ".xdts", state.ledger) : null;
+}
+
+/* ---------- undo / redo（作業中の取り消し。履歴＝受け渡しとは別） ---------- */
+function pushUndo() {
+  if (!state.doc) return;
+  state.undo.push(JSON.stringify(state.doc.sheet));
+  if (state.undo.length > 300) state.undo.shift();
+  state.redo = [];
+}
+function markDirty() { state.dirty = true; renderHeadOnly(); renderList(results()); refreshTextPanel(); }
+function refreshVerdicts() { renderList(results()); }
+function undo() {
+  if (!state.undo.length || !state.doc) return;
+  closeInlineEditor({ silent: true });
+  state.redo.push(JSON.stringify(state.doc.sheet));
+  state.doc.sheet = JSON.parse(state.undo.pop());
+  state.dirty = true;
+  renderMain();
+}
+function redo() {
+  if (!state.redo.length || !state.doc) return;
+  closeInlineEditor({ silent: true });
+  state.undo.push(JSON.stringify(state.doc.sheet));
+  state.doc.sheet = JSON.parse(state.redo.pop());
+  state.dirty = true;
+  renderMain();
+}
+document.addEventListener("keydown", e => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+  const t = e.target;
+  if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT") && !t.classList.contains("inline-editor")) return;
+  e.preventDefault();
+  if (e.shiftKey) redo(); else undo();
+});
+
+/* ========= 描画 ========= */
+
+function results() {
+  return [...state.files.values()].map(r => r.result).filter(Boolean)
+    .sort((a, b) => a.basename.localeCompare(b.basename, "ja"));
+}
+
+function render() {
+  state.textForce = true;      // 文書の切り替えを含むので、テキストコマンド欄はフォーカス中でも書き換える
+  const list = results();
+  renderList(list);
+  if (!state.selectedPath && list.length) {
+    const firstNg = list.find(r => r.ng);
+    state.selectedPath = (firstNg || list[0]).path;
+    loadDocFromRec(state.selectedPath, state.files.get(state.selectedPath));
+    renderList(list);
+  }
+  renderMain();
+}
+
+function renderList(list) {
+  const ul = $("fileList");
+  if (!list.length) {
+    ul.innerHTML = '<li class="empty-note">開いたカットがここに並びます。</li>';
+    $("summaryLine").hidden = true;
+    return;
+  }
+  // 判定は1か所で: 要＝検品NG（欠番など）か朱の未解消、保留＝カット表があるのに該当なし、それ以外が OK（検）
+  const verdictOf = r => {
+    let ng = r.ng, pending = r.pending;
+    if (state.doc && r.path === state.selectedPath) {
+      const res = inspect([currentTT()], currentEntry());
+      ng = res.ng || state.doc.annotations.some(a => a.state === "要");
+      pending = res.pending;
+    } else if (r.doc) {
+      ng = ng || (r.doc.annotations || []).some(a => a.state === "要");
+    }
+    if (!state.ledger.length) pending = false;
+    return ng ? "ng" : (pending ? "pend" : "ok");
+  };
+  const verdicts = list.map(verdictOf);
+  $("summaryLine").hidden = false;
+  $("cntAll").textContent = list.length;
+  $("cntNg").textContent = verdicts.filter(v => v === "ng").length;
+  $("cntOk").textContent = verdicts.filter(v => v === "ok").length;
+  ul.innerHTML = list.map((r, i) => {
+    const cls = verdicts[i];
+    const mark = cls === "ng" ? "要" : (cls === "pend" ? "保" : "検");
+    const liveCut = (state.doc && r.path === state.selectedPath) ? state.doc.cut.cut : (r.doc ? r.doc.cut.cut : (r.header && r.header.cut));
+    const cut = liveCut ? "C-" + esc(fmtCut(liveCut)) : (r.entry ? "C-" + esc(fmtCut(r.entry.key)) : "—");
+    const len = (r.parsed && r.parsed[0]) ? komaToShaku(r.parsed[0].duration) : "";
+    const sel = r.path === state.selectedPath ? " selected" : "";
+    const dirty = sel && state.dirty ? '<span class="fi-dirty">●</span>' : "";
+    const kind = (state.files.get(r.path) || {}).kind || "";
+    return `<li><button class="file-item${sel}" data-path="${esc(r.path)}">
+      <span class="mini ${cls}">${mark}</span>
+      <span class="fi-cut">${cut}</span>
+      <span class="fi-name num">${esc(r.basename)}${kind === "vdts" ? " ◆" : ""}</span>
+      <span class="fi-len num">${len}</span>${dirty}
+    </button></li>`;
+  }).join("");
+}
+
+function renderMain() {
+  if (!state.doc) {
+    main.innerHTML = '<div class="main-empty">左で開くか、ここへドラッグ＆ドロップしてください。</div>';
+    state.sheetDom = null;
+    refreshTextPanel();
+    return;
+  }
+  if (!$("sheetHead")) {
+    main.innerHTML = '<div id="sheetHead"></div><div id="toolsBox"></div><div id="bannerBox"></div><div id="checksBox"></div><div id="sheetBox"></div><div id="belowBox"></div>';
+    state.sheetDom = null;
+    bindSheetGestures();
+  }
+  renderHeadOnly();
+  renderTools();
+  renderBanner();
+  renderChecks();
+  renderSheetDom();
+  renderBelow();
+  refreshTextPanel(state.textForce); state.textForce = false;
+}
+
+function renderHeadOnly() {
+  const box = $("sheetHead"); if (!box || !state.doc) return;
+  const doc = state.doc;
+  const D = doc.sheet.duration;
+  const hist = doc.history.length;
+  const f = (key, label, ph, cls) => `<div class="ph-cell ${cls || ""}"><div class="ph-label">${label}</div><div class="ph-value${doc.cut[key] ? "" : " ph-empty"}" data-head="${key}" title="タップして書く">${esc(doc.cut[key] || ph)}</div></div>`;
+  box.innerHTML = `<div class="sheet-head">
+    <div class="paper-head">
+      <div class="ph-cell"><div class="ph-label">話数</div><div class="ph-value num${doc.cut.episode ? "" : " ph-empty"}" data-head="episode" title="タップして書く">${esc(doc.cut.episode ? fmtEpisode(doc.cut.episode) : "—")}</div></div>
+      ${f("title", "作品名（DTSでは 略称#話数 の略称）", "作品名", "ph-title")}
+      <div class="ph-cell"><div class="ph-label">シーン</div><div class="ph-value num${doc.cut.scene ? "" : " ph-empty"}" data-head="scene" title="タップして書く">${esc(doc.cut.scene ? fmtScene(doc.cut.scene) : "—")}</div></div>
+      <div class="ph-cell ph-cut"><div class="ph-label">カット</div><div class="ph-value num${doc.cut.cut ? "" : " ph-empty"}" data-head="cut" title="タップして書く">${esc(doc.cut.cut ? fmtCut(doc.cut.cut) : "000")}</div></div>
+      <div class="ph-cell"><div class="ph-label">尺</div><div class="ph-value num" data-head="duration" title="タップして本尺を変える${(doc.sheet.slackHead || doc.sheet.slack) ? "（総尺 ＝ 本尺 ＋ 頭の余尺 ＋ 尻の余尺）" : ""}">${(doc.sheet.slackHead || doc.sheet.slack) ? `${komaToShaku(totalFrames(doc.sheet))} <span class="ph-sub">(${totalFrames(doc.sheet)}) ＝ ${komaToShaku(D)} ＋ ${doc.sheet.slackHead || 0} ＋ ${doc.sheet.slack || 0}</span>` : `${komaToShaku(D)} <span class="ph-sub">(${D})</span>`}</div></div>
+      ${f("author", "作業者", "—")}
+      <div class="ph-cell"><div class="ph-label">ページ</div><div class="ph-value num">${pageCount(totalFrames(doc.sheet))} 枚 <span class="ph-sub">(${PAGE_FRAMES}コマ/枚)</span></div></div>
+      <div class="ph-cell ph-memo"><div class="ph-label">メモ欄</div><div class="ph-value${doc.cut.memo ? "" : " ph-empty"}" data-head="memo" title="タップして書く">${esc(doc.cut.memo || "演出指示・申し送りなど")}</div></div>
+    </div>
+    <div class="ph-side">
+      <div class="sheet-sub num">${esc(state.src.basename)} ｜ ${isBrowsing() ? `<span class="dirty" style="color:var(--blue)">版 ${doc.history[state.viewVersion].id} / ${hist} を表示中</span>` : `版 ${hist}（最新）`} ｜ ${state.dirty ? '<span class="dirty">● 未保存</span>' : "保存済"}</div>
+    </div>
+  </div>`;
+  box.querySelectorAll("[data-head]").forEach(el => el.addEventListener("click", () => {
+    const key = el.dataset.head;
+    if (key === "duration") openDurationEditor(el); else openHeadFieldEditor(key, el);
+  }));
+  const memoCell = box.querySelector(".ph-memo");
+  if (memoCell) {
+    const h = Math.max(130, Math.round(Number(doc.cut.memoHeight) || 0) || 150);
+    memoCell.querySelector(".ph-value").style.minHeight = h + "px";
+    const c = document.createElement("canvas"); c.className = "ink-canvas memo-ink";
+    memoCell.appendChild(c);
+    bindInkCanvas(c, "memo");
+    state.memoCanvas = c;
+    // 道具（欄の右上）
+    const tools = document.createElement("div"); tools.className = "ink-tools";
+    tools.innerHTML = ["black", "shu", "blue", "green"].map(k => `<button class="swatch${state.ink.color === k && !state.ink.eraser ? " on" : ""}" data-ink-color="${k}" style="background:${INK_COLORS[k]}" title="${k === "black" ? "黒" : k === "shu" ? "朱" : k === "blue" ? "青" : "緑"}"></button>`).join("")
+      + `<button class="ghost w${state.ink.width === "thin" ? " on" : ""}" data-ink-width="thin">細</button><button class="ghost w${state.ink.width === "thick" ? " on" : ""}" data-ink-width="thick">太</button><button class="ghost w${state.ink.eraser ? " on" : ""}" data-ink-eraser="1" title="なぞった線を消す">消</button>`;
+    tools.addEventListener("pointerdown", ev => ev.stopPropagation());
+    tools.querySelectorAll("[data-ink-color]").forEach(b => b.addEventListener("click", () => { state.ink.color = b.dataset.inkColor; state.ink.eraser = false; renderHeadOnly(); }));
+    tools.querySelectorAll("[data-ink-width]").forEach(b => b.addEventListener("click", () => { state.ink.width = b.dataset.inkWidth; state.ink.eraser = false; renderHeadOnly(); }));
+    tools.querySelectorAll("[data-ink-eraser]").forEach(b => b.addEventListener("click", () => { state.ink.eraser = !state.ink.eraser; renderHeadOnly(); }));
+    memoCell.appendChild(tools);
+    // 高さの調整（下端をドラッグ）
+    const rz = document.createElement("div"); rz.className = "memo-resize"; rz.title = "上下にドラッグして描画領域の高さを変える";
+    rz.addEventListener("pointerdown", ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      const startY = ev.clientY, startH = memoCell.querySelector(".ph-value").getBoundingClientRect().height, id = ev.pointerId;
+      const mv = e2 => { if (e2.pointerId !== id) return; const nh = Math.max(130, Math.round(startH + e2.clientY - startY)); memoCell.querySelector(".ph-value").style.minHeight = nh + "px"; drawInk("memo"); };
+      const up = e2 => { if (e2.pointerId !== id) return; document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); doc.cut.memoHeight = Math.round(memoCell.querySelector(".ph-value").getBoundingClientRect().height); markDirty(); };
+      document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+    });
+    memoCell.appendChild(rz);
+    requestAnimationFrame(() => drawInk("memo"));
+  }
+}
+
+/* 見出しの文字欄: その場入力。メモ欄だけ複数行（Enter は改行、閉じるのは他を触ったとき） */
+function openHeadFieldEditor(key, el) {
+  closeInlineEditor({ silent: true });
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.cut);
+  const multi = key === "memo";
+  const ta = document.createElement("textarea");
+  ta.className = "inline-editor" + (multi ? " multi" : "");
+  ta.rows = multi ? 3 : 1; ta.value = doc.cut[key] || ""; ta.spellcheck = false;
+  ta.style.textAlign = "left";
+  document.body.appendChild(ta);
+  inlineEd = { ta, pad: null, li: -1, k: 0, snapshot, td: null, kind: "head", changed: false, wide: true, multi,
+    anchorFn: () => document.querySelector('[data-head="' + key + '"]') || el };
+  ta.addEventListener("input", () => {
+    if (!multi) ta.value = ta.value.replace(/\r?\n/g, "");
+    if (doc.cut[key] !== ta.value) { doc.cut[key] = ta.value; inlineEd.changed = true; }
+    el.textContent = ta.value || (multi ? "演出指示・申し送りなど" : "—"); el.classList.toggle("ph-empty", !ta.value);
+    positionInline();
+  });
+  ta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); doc.cut = JSON.parse(snapshot); closeInlineEditor({ silent: true }); renderHeadOnly(); return; }
+    if (ev.key === "Enter" && !multi) { ev.preventDefault(); finish(); }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (inlineEd && inlineEd.ta === ta && document.activeElement !== ta) finish(); }, 0));
+  ta.addEventListener("pointerdown", ev => ev.stopPropagation());
+  positionInline();
+  setTimeout(() => { ta.focus(); ta.select(); positionInline(); }, 0);
+  function finish() {
+    const ed = inlineEd; if (!ed) return;
+    closeInlineEditor({ silent: true });
+    if (ed.changed) { markDirty(); }
+    renderHeadOnly(); renderList(results());
+  }
+}
+
+function renderTools() {
+  const box = $("toolsBox"); if (!box || !state.doc) return;
+  const D = state.doc.sheet.duration;
+  box.innerHTML = `<div class="tools">
+    <button id="tSave" title="版を1つ重ねて .vdts へ上書き保存（初回だけ保存先を聞く）">上書き保存${state.src && state.src.kind === "vdts" ? "" : "（.vdts を作る）"}</button>
+    <button class="ghost" id="tXdts" title="CSP 等へ渡す">xdts 書き出し</button>
+    <button class="ghost" id="tTdts" title="東映DTS へ渡す">tdts 書き出し</button>
+    <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・朱・動画欄はそのまま）">取り込み</button>
+    <span class="sep"></span>
+    <button class="ghost icon" id="tUndo" title="元に戻す" ${state.undo.length ? "" : "disabled"}>↶</button>
+    <button class="ghost icon" id="tRedo" title="やり直す" ${state.redo.length ? "" : "disabled"}>↷</button>
+    <span class="sep"></span>
+    <button class="ghost" id="tCut" title="青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす" style="${state.cutMode ? "background:#1f6feb;color:#fff;border-color:#1f6feb" : ""}">尺編集${state.cutMode ? "中" : ""}</button>
+    <button class="ghost" id="tSlack" title="頭と尻にコマを足す（足した行は薄いグレー）">余尺${(state.doc.sheet.slackHead || state.doc.sheet.slack) ? "（頭" + (state.doc.sheet.slackHead || 0) + "・尻" + (state.doc.sheet.slack || 0) + "）" : ""}</button>
+    <button class="ghost" id="tDouga" title="原画欄から動画欄を作り直す（原画の番号と中割○に通し番号）">動画欄を更新</button>
+    <span class="sep"></span>
+    <button class="ghost" id="tHistory" title="過去の版を表示する（◀▶で前後の版へ）">版 ${state.doc.history.length}${isBrowsing() ? "（版 " + state.doc.history[state.viewVersion].id + " を表示中）" : ""}</button>
+    <button class="ghost" id="tWho" title="いま作業している人・役">${esc(state.session.role || "役")}／${esc(state.session.who || "名前")}</button>
+  </div>`;
+  $("tSave").addEventListener("click", () => openCommitPopup());
+  $("tXdts").addEventListener("click", () => exportDerived("xdts"));
+  $("tImport").addEventListener("click", async () => {
+    let file = null;
+    if (window.showOpenFilePicker) {
+      try { const [fh] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "タイムシート", accept: { "application/octet-stream": [".xdts", ".tdts"] } }] }); file = await fh.getFile(); }
+      catch (e) { if (e.name !== "AbortError") showError("開けません: " + e.message); return; }
+    } else {
+      file = await new Promise(resolve => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xdts,.tdts"; inp.addEventListener("change", () => resolve(inp.files[0] || null)); inp.click(); });
+      if (!file) return;
+    }
+    if (!window.confirm(`「${file.name}」の内容で今のシートの原画欄を差し替えます（版を1つ重ねます。履歴・朱・動画欄はそのまま。取り消しもできます）`)) return;
+    await importIntoCurrent(file);
+  });
+  $("tTdts").addEventListener("click", () => exportDerived("tdts"));
+  $("tUndo").addEventListener("click", undo);
+  $("tRedo").addEventListener("click", redo);
+  $("tCut").addEventListener("click", () => {
+    state.cutMode = !state.cutMode;
+    document.body.classList.toggle("cut-mode", state.cutMode);
+    renderTools();
+    state.shakuSel = null; closePopups(); paintShakuSelection();
+    setStatus(false, state.cutMode ? "尺編集: 青いフレーム線から線へドラッグして範囲を選ぶ → 切る／伸ばす。もう一度押すと終了" : "");
+  });
+  $("tSlack").addEventListener("click", () => openSlackPopup($("tSlack")));
+  $("tDouga").addEventListener("click", () => {
+    const doc = state.doc; if (!doc) return;
+    if (doc.sheet.douga.length && !window.confirm("動画欄を原画欄から作り直します（今の動画欄は置き換わります）")) return;
+    pushUndo();
+    doc.sheet.douga = dougaFromGenga(doc.sheet.layers);
+    state.sheetDom = null;
+    markDirty(); renderMain();
+  });
+  $("tHistory").addEventListener("click", () => {
+    const N = state.doc.history.length;
+    if (isBrowsing()) browseVersion(null); else if (N) browseVersion(N - 1);
+    document.getElementById("mainPane").scrollTop = 0;
+  });
+  $("tWho").addEventListener("click", () => openCommitPopup({ onlyIdentity: true }));
+}
+
+function renderBanner() {
+  const box = $("bannerBox"); if (!box) return;
+  if (!isBrowsing()) { box.innerHTML = ""; return; }
+  const doc = state.doc, idx = state.viewVersion, h = doc.history[idx], N = doc.history.length;
+  const when = String(h.at || "").replace("T", " ").replace(/[+\-]\d\d:\d\d$/, "");
+  const d = diffSheets(doc.sheet, h.sheet);
+  const summary = diffIsEmpty(d) ? "今と同じ内容" : [
+    d.duration ? `尺 ${komaToShaku(d.duration[1])}（今 ${komaToShaku(d.duration[0])}）` : "",
+    ...Object.entries(d.layers).map(([n, x]) => x.added ? `${n} は今は無い` : x.removed ? `${n} は今だけ` : `${n} ${x.komas.length}コマ違う`),
+    d.douga ? "動画欄" : "", d.dialogue ? "台詞" : "", d.camera ? "カメラ" : "", d.ink ? "手書き" : "",
+  ].filter(Boolean).join("・");
+  box.innerHTML = `<div class="ext-banner browse">
+    <button class="ghost icon" id="bPrev" ${idx > 0 ? "" : "disabled"} title="前の版">◀</button>
+    <strong>版 ${h.id} / ${N}</strong> <span class="num">${esc(when)}</span> ${esc(h.role || "")} ${esc(h.who || "")} ${h.note ? "「" + esc(h.note) + "」" : ""}
+    <button class="ghost icon" id="bNext" ${idx < N - 1 ? "" : "disabled"} title="次の版">▶</button>
+    <span style="color:var(--pencil)">｜ 今との違い: ${esc(summary)}（朱の背景）</span>
+    <span style="flex:1"></span>
+    <button class="ghost" id="bRestore">この版の内容に戻す</button>
+    <button id="bNow">今に戻る</button>
+  </div>`;
+  $("bPrev").addEventListener("click", () => browseVersion(idx - 1));
+  $("bNext").addEventListener("click", () => browseVersion(idx + 1));
+  $("bNow").addEventListener("click", () => browseVersion(null));
+  $("bRestore").addEventListener("click", () => restoreVersion(idx));
+}
+function browseVersion(idx) {
+  closeInlineEditor(); closePopups();
+  state.viewVersion = (idx === null || idx < 0 || idx >= state.doc.history.length) ? null : idx;
+  state.sheetDom = null;
+  renderHeadOnly(); renderTools(); renderBanner(); renderChecks(); renderSheetDom(); renderBelow();
+}
+/* 版を戻す＝その内容で新しい版をすぐ重ねる（事故防止: 戻した事実が履歴に残り、未保存のまま宙に浮かない） */
+async function restoreVersion(idx) {
+  const doc = state.doc;
+  const h = doc.history[idx];
+  if (!window.confirm(`版 ${h.id} の内容に戻し、その内容で版 ${doc.history.length + 1} をすぐ重ねます（履歴は消えません）`)) return;
+  pushUndo();
+  doc.sheet = normalizeSheet(cloneModel(h.sheet));
+  state.viewVersion = null; state.sheetDom = null;
+  const note = `版 ${h.id} の内容に戻す`;
+  commitDoc(doc, { who: state.session.who, role: state.session.role, note, force: true });
+  markDirty(); renderMain();
+  setStatus(false, `版 ${doc.history.length} を重ねました（版 ${h.id} の内容）`);
+  await saveVdts(note, { noStack: true });   // 重ねた版をファイルに書く
+}
+
+function renderChecks() {
+  const box = $("checksBox"); if (!box || !state.doc) return;
+  const res = inspect([currentTT()], currentEntry());
+  const open = state.doc.annotations.filter(a => a.state === "要").length;
+  const rows = res.checks.filter(c => !/^カット表/.test(c.text) && !/^尺 /.test(c.text) || (currentEntry() && /^尺 /.test(c.text))).map(c => {
+    const mark = c.level === "good" ? "○" : c.level === "bad" ? "✕" : "—";
+    const cls = c.level === "good" ? "good" : c.level === "bad" ? "bad" : "warn";
+    return `<div class="check-row ${cls}"><span class="mark">${mark}</span>${esc(c.text)}</div>`;
+  });
+  rows.push(`<div class="check-row ${open ? "bad" : "good"}"><span class="mark">${open ? "✕" : "○"}</span>朱 未解消 ${open} 件（全 ${state.doc.annotations.length} 件）</div>`);
+  box.innerHTML = `<div class="checks">${rows.join("")}</div>`;
+}
+
+/* ---------- シート DOM（形が変わらない限り作り直さず、中身だけ塗り替える） ---------- */
+
+function cellKey(kind, li, k) { return kind + ":" + li + ":" + k; }
+function cellsFor(kind, li) {
+  const sh = viewedSheet();
+  return kind === "d" ? (sh.douga[li] || {}).cells : (sh.layers[li] || {}).cells;
+}
+function blocksFor(kind) { const sh = viewedSheet(); return kind === "s" ? (sh.dialogue || []) : (sh.camera || []); }
+function blockAt(kind, lane, k) { return blocksFor(kind).find(b => (b.lane || 0) === lane && k >= b.from && k <= b.to) || null; }
+
+function viewedSheet() {
+  const doc = state.doc;
+  if (state.viewVersion !== null && doc.history[state.viewVersion]) return doc.history[state.viewVersion].sheet;
+  return doc.sheet;
+}
+function isBrowsing() { return state.viewVersion !== null && !!state.doc.history[state.viewVersion]; }
+
+function renderSheetDom() {
+  const box = $("sheetBox"); if (!box || !state.doc) return;
+  const model = normalizeSheet(viewedSheet());
+  const shape = { duration: model.duration, slack: (model.slack || 0) + "/" + (model.slackHead || 0), layerCount: model.layers.length, dougaCount: model.douga.length };
+  const d = state.sheetDom;
+  if (!d || d.shape.duration !== shape.duration || d.shape.slack !== shape.slack || d.shape.layerCount !== shape.layerCount || d.shape.dougaCount !== shape.dougaCount) {
+    buildSheetDom(box, model);
+  }
+  paintSheet();
+}
+
+/* 紙の並び: コマ ｜ 原画（ACTION） ｜ 台詞 S1 S2 ｜ 動画（CELL、あれば） ｜ カメラ CAM1 CAM2 ｜ ＋ ｜ 朱 ｜ 秒 */
+function buildSheetDom(box, model) {
+  const D = totalFrames(model);                        // 行は総尺（頭余尺＋本尺＋尻余尺）。余尺は薄いグレー
+  const hasDouga = model.douga.length > 0;
+  const gHeads = model.layers.map((L, li) => `<th class="layer-name" data-kind="g" data-li="${li}" title="タップで改名">${esc(L.name)}</th>`).join("");
+  const sHeads = `<th class="aux-head">S1</th><th class="aux-head">S2</th>`;
+  const dHeads = hasDouga ? model.douga.map((L, li) => `<th class="layer-name douga-head" data-kind="d" data-li="${li}" title="動画欄">${esc(L.name)}</th>`).join("") : "";
+  const cHeads = `<th class="aux-head">CAM1</th><th class="aux-head">CAM2</th>`;
+  const groupRow = `<tr class="group-row"><th></th><th colspan="${model.layers.length}">原画</th><th colspan="2">台詞</th>${hasDouga ? `<th colspan="${model.douga.length}">動画</th>` : ""}<th colspan="2">カメラ</th><th></th><th></th></tr>`;
+  let rows = "";
+  for (let k = 1; k <= D; k++) {
+    const dk = displayKoma(model, k);
+    const rowCls = ((k === D) ? "r-last " : "") + (isSlackFrame(model, k) ? "r-slack " : "") + ((dk > 0 && dk % PAGE_FRAMES === 0) ? "r-page " : "") + ((dk > 0 && dk % 24 === 0) ? "r-sec" : (dk > 0 && dk % 6 === 0) ? "r-six" : "r-norm");
+    let cells = "";
+    for (let li = 0; li < model.layers.length; li++) cells += `<td class="cell" data-kind="g" data-li="${li}" data-k="${k}"></td>`;
+    cells += `<td class="cell aux" data-kind="s" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="s" data-li="1" data-k="${k}"></td>`;
+    if (hasDouga) for (let li = 0; li < model.douga.length; li++) cells += `<td class="cell douga" data-kind="d" data-li="${li}" data-k="${k}"></td>`;
+    cells += `<td class="cell aux" data-kind="c" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="c" data-li="1" data-k="${k}"></td>`;
+    rows += `<tr class="${rowCls}"><td class="koma-no" data-k="${k}" title="タップで朱を書く">${dk}</td>${cells}<td class="memo-lane" data-k="${k}"></td></tr>`;
+  }
+  const colCount = 1 + model.layers.length + 2 + (hasDouga ? model.douga.length : 0) + 2 + 2;
+  box.innerHTML = `<div class="sheet-wrap"><table class="sheet">
+    <thead>${groupRow}<tr><th>コマ</th>${gHeads}${sHeads}${dHeads}${cHeads}<th class="add-layer" title="原画の列を足す">＋</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr class="dur-row"><td colspan="${colCount}" class="dur-handle" title="上下にドラッグして尺を変える">⇕ 尺 ${komaToShaku(model.duration)}（${model.duration}）${(model.slackHead || model.slack) ? "　余尺 頭 " + (model.slackHead || 0) + "・尻 " + (model.slack || 0) : ""} — ここを上下にドラッグ</td></tr></tfoot>
+  </table>
+  <div class="sheet-note">6コマごとに中罫・24コマ（1秒）ごとに太罫・144コマ（1枚）ごとに二重罫 ｜ × = 空セル ｜ ○ = 中割 ｜ 台詞・カメラは空きをタップして置き、端をドラッグして伸縮</div></div>`;
+  const table = box.querySelector("table.sheet");
+  const cellsByKey = new Map();
+  table.querySelectorAll("td.cell").forEach(td => cellsByKey.set(cellKey(td.dataset.kind, td.dataset.li, td.dataset.k), td));
+  const lanes = new Map();
+  table.querySelectorAll("td.memo-lane").forEach(td => lanes.set(Number(td.dataset.k), td));
+  state.sheetDom = { table, cellsByKey, lanes, shape: { duration: model.duration, slack: (model.slack || 0) + "/" + (model.slackHead || 0), layerCount: model.layers.length, dougaCount: model.douga.length } };
+}
+
+function paintCellsColumn(kind, li, L, diffSet) {
+  const dom = state.sheetDom;
+  const cells = L.cells;
+  const hasAny = cells.some(v => v !== EMPTY);
+  let held = EMPTY;
+  for (let i = 0; i < cells.length; i++) {
+    const v = cells[i];
+    const td = dom.cellsByKey.get(cellKey(kind, li, i + 1));
+    if (!td) continue;
+    const tick = isTick(v);
+    const change = !tick && ((i === 0 && hasAny) || v !== held);   // 先頭は書く（列に何かあるとき。全部空なら何も書かない）
+    const empty = !tick && isEmptyCell(v);
+    let cls = "cell" + (kind === "d" ? " douga" : "");
+    let html;
+    if (tick) { cls += " tick"; html = (v === "SYMBOL_TICK_2" ? "●" : "○") + '<span class="vline"></span>'; }
+    else if (change) { cls += empty ? " empty" : ""; if (/^SYMBOL_/.test(v)) cls += " unknown"; html = esc(displayCell(v)); }
+    else if (!hasAny) { cls += " empty blank"; html = ""; }
+    else { cls += empty ? " empty" : ""; html = '<span class="vline"></span>'; }
+    if (diffSet && diffSet.has(i + 1)) cls += " diff";
+    if (td.className !== cls) td.className = cls;
+    if (td.innerHTML !== html) td.innerHTML = html;
+    td.title = `${L.name}: ${tick ? "中割" : empty ? "空セル" : displayCell(v)} — ${i + 1}コマ目`;
+    if (!tick) held = v;
+  }
+}
+
+const SPEAKER_COLORS = ["#1e2b33", "#c7361f", "#2b7a3a", "#2e4bc0", "#a02aa0", "#d07a10"];
+function speakerColorMap() {
+  const names = [];
+  (viewedSheet().dialogue || []).slice().sort((a, b) => a.from - b.from).forEach(b => { const sp = (b.speaker || "").trim(); if (sp && !names.includes(sp)) names.push(sp); });
+  const map = {};
+  names.forEach((nm, i) => { map[nm] = SPEAKER_COLORS[i % SPEAKER_COLORS.length]; });
+  return map;
+}
+/* 文字を欄に沿って散らす（Auto Sheet と同じ: 1.5コマ目から、終わりの0.6コマ手前まで、1文字の間隔は最大3コマ） */
+function spreadOffsets(totalHeight, rowH, count, maxStepRows) {
+  if (!count) return [];
+  const start = rowH * 1.5, end = Math.max(start, totalHeight - rowH * 0.6);
+  const step = count > 1 ? Math.min(rowH * (maxStepRows || 3), (end - start) / (count - 1)) : 0;
+  return Array.from({ length: count }, (_, i) => start + step * i);
+}
+
+function paintBlocks(kind) {
+  const dom = state.sheetDom;
+  const blocks = blocksFor(kind);
+  const D = totalFrames(viewedSheet());
+  const colors = kind === "s" ? speakerColorMap() : {};
+  const rowH = sheetRowHeight();
+  for (let lane = 0; lane < 2; lane++) {
+    for (let k = 1; k <= D; k++) {
+      const td = dom.cellsByKey.get(cellKey(kind, lane, k));
+      if (!td) continue;
+      const cls = "cell aux";
+      if (td.className !== cls) td.className = cls;
+      if (td.innerHTML !== "") td.innerHTML = "";
+      td.title = (kind === "s" ? "台詞" : "カメラ") + " — " + k + "コマ目（タップで書く）";
+    }
+  }
+  blocks.forEach(b => {
+    const lane = b.lane || 0;
+    const start = dom.cellsByKey.get(cellKey(kind, lane, b.from));
+    const end = dom.cellsByKey.get(cellKey(kind, lane, Math.min(D, b.to)));
+    if (!start || !end) return;
+    const h = end.getBoundingClientRect().bottom - start.getBoundingClientRect().top;
+    if (kind === "c") { paintCameraBlock(b, start, h, rowH); for (let k = b.from + 1; k <= Math.min(D, b.to); k++) { const td = dom.cellsByKey.get(cellKey(kind, lane, k)); if (td) { td.className = "cell aux in-blk" + (k === b.to ? " blk-end" : ""); td.title = cameraDisplayText(b); } } if (b.from === b.to) start.classList.add("blk-end"); return; }
+    const speaker = kind === "s" ? String(b.speaker || "").trim() : "";
+    const color = kind === "s" ? (colors[speaker] || SPEAKER_COLORS[0]) : "var(--ink)";
+    const label = (speaker ? speaker + "：" : "") + (b.text || "");
+    const chars = Array.from(String(b.text || ""));
+    const offs = spreadOffsets(h, rowH, chars.length, kind === "s" ? 3 : 0.8);   // 台詞は散らす、カメラは詰めて書く
+    const dk = kind === "s" ? String(b.kind || "") : "";
+    const speakerHtml = kind === "s" ? `<div class="blk-speaker" style="color:${color}">${esc(speaker || (dk === "SE" ? "SE" : "　"))}${dk && !(dk === "SE" && !speaker) ? `<span class="blk-kind">(${dk})</span>` : ""}</div>` : "";
+    const charsHtml = chars.map((ch, i) => `<span class="blk-ch" style="top:${Math.round(offs[i])}px;color:${kind === "s" ? color : "var(--ink)"}">${esc(ch)}</span>`).join("");
+    start.className = "cell aux blk-start";
+    start.innerHTML = `<div class="blk" style="height:${Math.max(18, h - 1)}px"><div class="blk-top"></div><div class="blk-guide${dk && dk !== "SE" ? " dashed" : ""}" style="border-color:${kind === "s" ? color : "var(--ink)"}"></div>${speakerHtml}${charsHtml}<div class="blk-bottom"></div></div>`;
+    start.title = label;
+    for (let k = b.from + 1; k <= Math.min(D, b.to); k++) {
+      const td = dom.cellsByKey.get(cellKey(kind, lane, k));
+      if (td) { td.className = "cell aux in-blk" + (k === b.to ? " blk-end" : ""); td.title = label; }
+    }
+    if (b.from === b.to) start.classList.add("blk-end");
+  });
+}
+
+/* カメラワーク（Auto Sheet の描き方に倣う）:
+   持続線＝レーンの縦線、両端に ▲（範囲の内側を向く）とフレーム名の丸囲み、動きの名前は線の脇。
+   F.I / F.O / O.L は楔形（F.I: 上が尖り下へ広がる、F.O: 逆、O.L: 砂時計）。前後のフレーム名が同じか FIX なら FIX */
+function paintCameraBlock(b, start, h, rowH) {
+  const kind = b.kind || "";
+  const isFix = kind === "FIX" || (b.fromLabel && b.fromLabel === b.toLabel);
+  const shape = kind === "F.I" ? "fi" : kind === "F.O" ? "fo" : kind === "O.L" ? "ol" : "";
+  const label = isFix ? "FIX" : (kind || "") + (b.text ? (kind ? " " : "") + b.text : "");
+  const ring = (t) => t ? `<span class="cam-ring">${esc(t)}</span>` : "";
+  let inner = "";
+  if (shape) {
+    inner += `<div class="cam-shape cam-${shape}"></div>`;
+    inner += `<div class="cam-shape-text">${esc(label)}</div>`;
+    if (b.fromLabel) inner += `<div class="cam-ring-top">${ring(b.fromLabel)}</div>`;
+    if (b.toLabel) inner += `<div class="cam-ring-bottom">${ring(b.toLabel)}</div>`;
+  } else {
+    inner += `<div class="cam-line"></div>`;
+    inner += `<div class="cam-mark cam-mark-top"></div><div class="cam-ring-top">${ring(b.fromLabel)}</div>`;
+    inner += `<div class="cam-mark cam-mark-bottom"></div><div class="cam-ring-bottom">${ring(b.toLabel)}</div>`;
+    const chars = Array.from(label);
+    const offs = spreadOffsets(h, rowH, chars.length, 0.75);
+    inner += chars.map((ch, i) => `<span class="blk-ch cam-ch" style="top:${Math.round(offs[i])}px">${esc(ch)}</span>`).join("");
+  }
+  start.className = "cell aux blk-start";
+  start.innerHTML = `<div class="blk cam" style="height:${Math.max(18, h - 1)}px">${inner}</div>`;
+  start.title = cameraDisplayText(b);
+}
+
+function paintSheet() {
+  const dom = state.sheetDom; if (!dom || !state.doc) return;
+  const model = normalizeSheet(viewedSheet());
+  if (dom.shape.duration !== model.duration || dom.shape.slack !== (model.slack || 0) + "/" + (model.slackHead || 0) || dom.shape.layerCount !== model.layers.length || dom.shape.dougaCount !== model.douga.length) { renderSheetDom(); return; }
+  let diff = null;
+  if (isBrowsing()) diff = diffSheets(state.doc.sheet, model);   // 今と違うコマに印
+  model.layers.forEach((L, li) => paintCellsColumn("g", li, L, diff && diff.layers[L.name] && diff.layers[L.name].komas ? new Set(diff.layers[L.name].komas) : null));
+  model.douga.forEach((L, li) => paintCellsColumn("d", li, L, null));
+  paintBlocks("s");
+  paintBlocks("c");
+  if (!document.getElementById("diffStyle")) {
+    const st = document.createElement("style"); st.id = "diffStyle";
+    st.textContent = "td.cell.diff{background:var(--shu-bg);box-shadow:inset 0 0 0 1px var(--shu)}";
+    document.head.appendChild(st);
+  }
+  const marks = state.doc.annotations.filter(a => a.state !== "済" && a.anchor && a.anchor.komaStart >= 1);
+  dom.lanes.forEach((td, k) => {
+    const bars = marks.map((a, i) => {
+      const s0 = a.anchor.komaStart, e0 = Math.max(s0, a.anchor.komaEnd || s0);
+      if (k < s0 || k > e0) return "";
+      const kd = memoKind(a.kind);
+      const edge = (k === s0 ? " m-start" : "") + (k === e0 ? " m-end" : "");
+      return `<span class="mbar ${kd.cls}${edge}" style="left:${2 + (i % 3) * 5}px" title="${esc(kd.label + ": " + (a.anchor.layer || "全体") + " " + s0 + "〜" + e0 + " — " + (a.text || ""))}"></span>`;
+    }).join("");
+    if (td.innerHTML !== bars) td.innerHTML = bars;
+  });
+  dom.table.querySelectorAll("th.layer-name").forEach(th => {
+    const arr = th.dataset.kind === "d" ? model.douga : model.layers;
+    const L = arr[Number(th.dataset.li)]; if (L && th.textContent !== L.name) th.textContent = L.name;
+  });
+  const dh = dom.table.querySelector(".dur-handle");
+  if (dh && !(gest && gest.mode === "dur")) dh.textContent = `⇕ 尺 ${komaToShaku(model.duration)}（${model.duration}）${(model.slackHead || model.slack) ? "　余尺 頭 " + (model.slackHead || 0) + "・尻 " + (model.slack || 0) : ""} — ここを上下にドラッグ`;
+}
+
+/* ---------- 下段: 版（履歴）と朱 ---------- */
+
+function renderBelow() {
+  const box = $("belowBox"); if (!box || !state.doc) return;
+  const doc = state.doc;
+  const hist = doc.history.slice().reverse().map((h, ri) => {
+    const idx = doc.history.length - 1 - ri;
+    const prev = doc.history[idx - 1];
+    const d = prev ? diffSheets(prev.sheet, h.sheet) : null;
+    const summary = !d ? "初版" : diffIsEmpty(d) ? "変更なし" : [
+      d.duration ? `尺 ${komaToShaku(d.duration[0])}→${komaToShaku(d.duration[1])}` : "",
+      d.slack ? `余尺 ${d.slack[0]}→${d.slack[1]}` : "",
+      ...Object.entries(d.layers).map(([n, x]) => x.added ? `${n} 追加` : x.removed ? `${n} 削除` : `${n} ${x.komas.length}コマ`),
+      d.douga ? "動画欄" : "", d.dialogue ? "台詞" : "", d.camera ? "カメラ" : "", d.ink ? "手書き" : "",
+    ].filter(Boolean).join("・");
+    const viewing = state.viewVersion === idx;
+    const when = String(h.at || "").replace("T", " ").replace(/[+\-]\d\d:\d\d$/, "");
+    return `<div class="memo-item${viewing ? " mk-moushiokuri" : ""}">
+      <span class="memo-kind">版 ${h.id}</span><span class="memo-target num">${esc(when)}</span> <span class="memo-target">${esc(h.role || "")} ${esc(h.who || "")}</span>
+      <div class="memo-body">${esc(h.note || "")}<span style="color:var(--pencil)">${h.note ? " ｜ " : ""}${esc(summary)}</span></div>
+      <div class="memo-meta"><span class="num">${esc(String(h.fingerprint || "").slice(7, 19))}</span>
+        <button data-view="${idx}">${viewing ? "今に戻る" : "この版を見る"}</button>
+        <button data-restore="${idx}">この版の内容に戻す</button></div>
+    </div>`;
+  }).join("");
+  const anns = doc.annotations.slice().reverse().map(a => {
+    const kd = memoKind(a.kind);
+    const target = a.anchor ? `${esc(a.anchor.layer || "全体")} ${a.anchor.komaStart}${a.anchor.komaEnd && a.anchor.komaEnd !== a.anchor.komaStart ? "〜" + a.anchor.komaEnd : ""}コマ` : "カット全体";
+    const when = String(a.at || "").replace("T", " ").replace(/[+\-]\d\d:\d\d$/, "");
+    return `<div class="memo-item ${kd.cls}${a.state === "済" ? " resolved" : ""}">
+      <span class="memo-kind">${esc(kd.label)}</span><span class="memo-target">${target}</span>
+      <div class="memo-body">${esc(a.text || "")}</div>
+      <div class="memo-meta"><span>${esc(a.role || "")} ${esc(a.who || "")}</span><span class="num">${esc(when)}</span>
+        <span>版${a.madeAgainst || "?"}に対して${a.resolvedIn ? "・版" + a.resolvedIn + "で解消" : ""}</span>
+        <button data-resolve="${esc(a.id)}">${a.state === "済" ? "解消を戻す" : "解消"}</button></div>
+    </div>`;
+  }).join("");
+  box.innerHTML = `<div class="memo-panel">
+    <details class="memo-details" open><summary>朱・申し送り（${doc.annotations.filter(a => a.state !== "済").length} 件 未解消）— コマ番号をタップして書く</summary>${anns || '<div class="empty-note">まだありません</div>'}</details>
+  </div>
+  <div class="memo-panel">
+    <details class="memo-details" ${state.viewVersion !== null ? "open" : ""}><summary>版（履歴 ${doc.history.length}）— 「上書き保存」のたびに1版重なる。戻したときもその内容で1版重なる</summary>${hist}</details>
+  </div>`;
+  box.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => {
+    const idx = Number(b.dataset.view);
+    browseVersion(state.viewVersion === idx ? null : idx);
+    document.getElementById("mainPane").scrollTop = 0;
+  }));
+  box.querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => restoreVersion(Number(b.dataset.restore))));
+  box.querySelectorAll("[data-resolve]").forEach(b => b.addEventListener("click", () => {
+    const a = doc.annotations.find(x => x.id === b.dataset.resolve); if (!a) return;
+    if (a.state === "済") { a.state = "要"; a.resolvedIn = null; }
+    else { a.state = "済"; a.resolvedIn = doc.history.length + 1; }
+    markDirty(); renderChecks(); paintSheet(); renderBelow(); refreshVerdicts();
+  }));
+}
+
+/* ========= 手書き（インク）: 見せるのはキャンバス、持つのは線 ========= */
+function roleInkColor(role) { return /作監|演出|総作監/.test(role || "") ? "shu" : /動検|検/.test(role || "") ? "blue" : "black"; }
+function inkWidthPx(st) { return (st.width === "thick" ? 3.2 : 1.6); }
+
+/* シートの列キー → 表の中での左端と幅（table 座標）。行は tbody の行の上端 */
+function sheetInkGeometry() {
+  const dom = state.sheetDom; if (!dom) return null;
+  const table = dom.table, tRect = table.getBoundingClientRect();
+  const first = table.querySelector("tbody tr"); if (!first) return null;
+  const cols = {};
+  first.querySelectorAll("td").forEach(td => {
+    const key = td.classList.contains("koma-no") ? "koma" : td.classList.contains("memo-lane") ? "lane" : (td.dataset.kind + ":" + td.dataset.li);
+    const r = td.getBoundingClientRect();
+    cols[key] = { left: r.left - tRect.left, width: r.width };
+  });
+  const rows = [...table.querySelectorAll("tbody tr")].map(tr => tr.getBoundingClientRect().top - tRect.top);
+  const last = table.querySelector("tbody tr:last-child");
+  const bottom = last ? last.getBoundingClientRect().bottom - tRect.top : 0;
+  return { cols, rows, bottom, width: tRect.width, height: tRect.height, colKeys: Object.keys(cols) };
+}
+function sheetPtToPx(g, pt) {
+  const col = g.cols[pt.c] || null;
+  const x = col ? col.left + col.width * pt.fx : pt.fx * g.width;
+  const i = Math.floor(pt.y), f = pt.y - i;
+  const top = g.rows[Math.max(0, Math.min(g.rows.length - 1, i))] || 0;
+  const next = i + 1 < g.rows.length ? g.rows[i + 1] : g.bottom;
+  const y = top + (next - top) * f + (i >= g.rows.length ? (i - g.rows.length + 1) * 22 : 0);
+  return { x, y };
+}
+function sheetPxToPt(g, x, y, p) {
+  let c = null, fx = 0;
+  for (const key of g.colKeys) { const col = g.cols[key]; if (x >= col.left && x < col.left + col.width) { c = key; fx = (x - col.left) / col.width; break; } }
+  if (!c) { c = "koma"; fx = Math.max(0, Math.min(1, x / g.width)); }
+  let i = g.rows.length - 1;
+  for (let r = 0; r < g.rows.length; r++) { const nxt = r + 1 < g.rows.length ? g.rows[r + 1] : g.bottom; if (y < nxt) { i = r; break; } }
+  const top = g.rows[i], nxt = i + 1 < g.rows.length ? g.rows[i + 1] : g.bottom;
+  const f = nxt > top ? Math.max(0, Math.min(0.999, (y - top) / (nxt - top))) : 0;
+  return { c, fx: Math.round(fx * 1000) / 1000, y: Math.round((i + f) * 1000) / 1000, p: Math.round((p || 0.5) * 100) / 100 };
+}
+function memoPtToPx(canvas, pt) { return { x: pt.fx * canvas.width, y: pt.y * canvas.height }; }
+function memoPxToPt(canvas, x, y, p) { return { fx: Math.round(x / canvas.width * 1000) / 1000, y: Math.round(y / canvas.height * 1000) / 1000, p: Math.round((p || 0.5) * 100) / 100 }; }
+
+function inkStrokesFor(zone) { const sh = viewedSheet(); return (sh.ink || []).filter(st => st.zone === zone); }
+
+function drawStrokePath(ctx, pts, st) {
+  if (!pts.length) return;
+  ctx.strokeStyle = INK_COLORS[st.color] || INK_COLORS.black; ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const base = inkWidthPx(st);
+  if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, base / 2, 0, Math.PI * 2); ctx.fill(); return; }
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    ctx.lineWidth = base * (0.6 + 0.8 * (b.p || 0.5));
+    ctx.beginPath();
+    if (i >= 2) { const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; const pm = { x: (pts[i - 2].x + a.x) / 2, y: (pts[i - 2].y + a.y) / 2 }; ctx.moveTo(pm.x, pm.y); ctx.quadraticCurveTo(a.x, a.y, m.x, m.y); }
+    else { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+    ctx.stroke();
+  }
+}
+function drawInk(zone) {
+  zone = "memo";                                   // 手書きは上段のメモ欄の中だけ。シートには描かせない
+  const canvas = state.memoCanvas; if (!canvas || !canvas.parentElement) return;
+  const r = canvas.parentElement.getBoundingClientRect();
+  if (canvas.width !== Math.round(r.width) || canvas.height !== Math.round(r.height)) { canvas.width = Math.round(r.width); canvas.height = Math.round(r.height); canvas.style.width = r.width + "px"; canvas.style.height = r.height + "px"; }
+  const toPx = pt => memoPtToPx(canvas, pt);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  inkStrokesFor(zone).forEach(st => drawStrokePath(ctx, st.points.map(toPx), st));
+  if (inkDrag && inkDrag.zone === zone && inkDrag.stroke) drawStrokePath(ctx, inkDrag.stroke.points.map(toPx), inkDrag.stroke);
+}
+
+/* 入力: シートは「メモ」モード中だけ、上段メモ欄はいつでも（ペン・マウス。指はスクロール／タップは文字入力）*/
+let inkDrag = null;
+function bindInkCanvas(canvas, zone) {
+  canvas.addEventListener("pointerdown", e => {
+    if (!state.doc || isBrowsing()) return;
+    if (e.pointerType === "touch") return;                       // 指はスクロール
+    if (zone !== "memo") return;
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    if (inlineEd) closeInlineEditor();
+    const rect = canvas.getBoundingClientRect();
+    const g = zone === "sheet" ? sheetInkGeometry() : null;
+    const toPt = (cx, cy, p) => zone === "sheet" ? sheetPxToPt(g, cx - rect.left, cy - rect.top, p) : memoPxToPt(canvas, cx - rect.left, cy - rect.top, p);
+    inkDrag = { id: e.pointerId, zone, canvas, g, toPt, x0: e.clientX, y0: e.clientY, moved: false, eraser: state.ink.eraser && zone === "sheet" || (state.ink.eraser && zone === "memo"), stroke: null, snapshot: JSON.stringify(state.doc.sheet), erased: false };
+    if (!inkDrag.eraser) inkDrag.stroke = { id: "k" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), zone, color: state.ink.color, width: state.ink.width, who: state.session.who, role: state.session.role, at: nowIso(), points: [toPt(e.clientX, e.clientY, e.pressure)] };
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (inkDrag.stroke) drawInk(zone);
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!inkDrag || inkDrag.id !== e.pointerId) return;
+    e.preventDefault();
+    const co = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    const evs = co && co.length ? co : [e];
+    if (!inkDrag.moved && Math.hypot(e.clientX - inkDrag.x0, e.clientY - inkDrag.y0) > 2) inkDrag.moved = true;
+    if (inkDrag.eraser) { evs.forEach(ev => eraseAt(ev.clientX, ev.clientY)); return; }
+    evs.forEach(ev => { const pt = inkDrag.toPt(ev.clientX, ev.clientY, ev.pressure); const last = inkDrag.stroke.points[inkDrag.stroke.points.length - 1]; if (Math.abs(pt.y - last.y) > 0.005 || Math.abs(pt.fx - last.fx) > 0.003 || pt.c !== last.c) inkDrag.stroke.points.push(pt); });
+    drawInk(zone);
+  });
+  const finish = e => {
+    if (!inkDrag || inkDrag.id !== e.pointerId) return;
+    const d = inkDrag; inkDrag = null;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (d.eraser) { if (d.erased) { state.undo.push(d.snapshot); state.redo = []; markDirty(); renderTools(); } drawInk(zone); return; }
+    if (zone === "memo" && !d.moved) {                            // タップ＝文字を書く（今までどおり）
+      drawInk(zone);
+      const el = document.querySelector('[data-head="memo"]'); if (el) openHeadFieldEditor("memo", el);
+      return;
+    }
+    if (!d.moved && zone === "sheet") { drawInk(zone); return; }   // 点だけは打たない（誤タップ対策）
+    state.doc.sheet.ink.push(d.stroke);
+    state.undo.push(d.snapshot); state.redo = [];
+    markDirty(); renderTools(); drawInk(zone);
+  };
+  canvas.addEventListener("pointerup", finish);
+  canvas.addEventListener("pointercancel", e => { if (inkDrag && inkDrag.id === e.pointerId) { inkDrag = null; drawInk(zone); } });
+}
+function eraseAt(clientX, clientY) {
+  const d = inkDrag; if (!d) return;
+  const rect = d.canvas.getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  const toPx = d.zone === "sheet" ? (pt => sheetPtToPx(d.g, pt)) : (pt => memoPtToPx(d.canvas, pt));
+  const ink = state.doc.sheet.ink;
+  for (let i = ink.length - 1; i >= 0; i--) {
+    const st = ink[i]; if (st.zone !== d.zone) continue;
+    const hit = st.points.some(pt => { const q = toPx(pt); return Math.hypot(q.x - x, q.y - y) < 9; });
+    if (hit) { ink.splice(i, 1); d.erased = true; }
+  }
+  if (d.erased) drawInk(d.zone);
+}
+
+/* ========= ペン1本の操作（指はスクロール、ペン／マウスは編集） ========= */
+
+const LONG_PRESS_MS = 560, MOVE_TOL_TOUCH = 4, MOVE_TOL_MOUSE = 8;
+let gest = null;
+
+function bindSheetGestures() {
+  const box = $("sheetBox");
+  box.addEventListener("pointerdown", onSheetPointerDown);
+  box.addEventListener("pointermove", onSheetPointerMove);
+  box.addEventListener("pointerup", onSheetPointerUp);
+  box.addEventListener("pointercancel", onSheetPointerCancel);
+  box.addEventListener("contextmenu", e => {
+    const td = e.target.closest("td.cell");
+    if (td && (td.dataset.kind === "g" || td.dataset.kind === "d") && !state.cutMode) { e.preventDefault(); openCellEditor(td.dataset.kind, Number(td.dataset.li), Number(td.dataset.k), "", "mouse"); }
+  });
+  box.addEventListener("click", e => {
+    // クリックはジェスチャで処理済み。列名・＋・コマ番号だけここで拾う（ゴーストクリック抑止つき）
+    if (gest && gest.suppressClickUntil > Date.now()) return;
+    if (isBrowsing()) return;
+    const th = e.target.closest("th.layer-name");
+    if (th) { if (th.dataset.kind === "g") openLayerNameEditor(th, Number(th.dataset.li)); return; }
+    if (e.target.closest("th.add-layer")) { addLayer(); return; }
+    const kn = e.target.closest("td.koma-no");
+    if (kn) { if (!state.cutMode) openAnnotationPopup(Number(kn.dataset.k), kn); return; }
+  });
+}
+
+function cellFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el ? el.closest("td.cell") : null;
+}
+function sheetRowHeight() {
+  const rows = state.sheetDom ? state.sheetDom.table.querySelectorAll("tbody tr") : null;
+  if (rows && rows.length > 1) return Math.max(8, rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top);
+  return 22;
+}
+function rowAtY(startK, y0, y) {
+  const D = totalFrames(state.doc.sheet);
+  return Math.max(1, Math.min(D, startK + Math.round((y - y0) / sheetRowHeight())));
+}
+
+function onSheetPointerDown(e) {
+  if (!state.doc) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  const dh = e.target.closest("td.dur-handle");
+  const td = e.target.closest("td.cell") || (state.cutMode ? e.target.closest("td.koma-no, td.memo-lane") : null);
+  if (!td && !dh) return;
+  if (inlineEd) closeInlineEditor();          // 別の場所に触れた＝閉じる（反映は済んでいる）。確定ボタンは無い
+  if (state.cutMode && td && !isBrowsing()) {   // 尺編集: 青いフレーム線から線へドラッグして範囲を選ぶ
+    if (popupEl && popupEl.dataset.shaku) closePopups();
+    const b = shakuBoundaryFromEvent(td, e.clientY);
+    gest = { id: e.pointerId, type: e.pointerType || "mouse", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: "shaku", b0: b, b1: b, longFired: false, timer: null, td, canDrag: true, dragTo: null, suppressClickUntil: 0, kind: "g", li: 0, k: 0 };
+    state.shakuSel = null; paintShakuSelection();
+    try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    e.preventDefault();
+    return;
+  }
+  if (isBrowsing()) {                         // 版を見ている間は書けない（指のスクロールだけ）
+    if (e.pointerType === "touch") { gest = { id: e.pointerId, type: "touch", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: "scroll", longFired: false, timer: null, td: null, canDrag: false, dragTo: null, suppressClickUntil: 0, kind: "g", li: 0, k: 0 }; try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } }
+    return;
+  }
+  const base = { id: e.pointerId, type: e.pointerType || "mouse", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, longFired: false, timer: null, td: td || dh, dragTo: null, suppressClickUntil: 0 };
+  if (dh) {
+    // 尺の端: 上下にドラッグ
+    const rows = state.sheetDom.table.querySelectorAll("tbody tr");
+    const rowH = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : 22;
+    gest = Object.assign(base, { kind: "dur", li: 0, k: 0, mode: "dur", canDrag: true, startD: state.doc.sheet.duration, rowH, targetD: state.doc.sheet.duration });
+    try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    e.preventDefault();
+    return;
+  }
+  const kind = td.dataset.kind, li = Number(td.dataset.li), k = Number(td.dataset.k);
+  gest = Object.assign(base, { kind, li, k, mode: "tap", canDrag: false, blk: null, blkMode: null });
+  if (kind === "g" || kind === "d") {
+    gest.canDrag = isChangePoint(cellsFor(kind, li), k - 1);
+  } else {
+    const b = blockAt(kind, li, k);
+    if (b) {
+      gest.blk = b; gest.canDrag = true;
+      gest.blkMode = (b.from === b.to) ? "end" : (k === b.from ? "start" : (k === b.to ? "end" : "move"));
+      gest.blkOffset = k - b.from;
+    }
+  }
+  try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  if (gest.type !== "mouse") {
+    gest.timer = setTimeout(() => {
+      if (!gest || gest.id !== e.pointerId || gest.mode !== "tap") return;
+      gest.longFired = true;
+      if (gest.canDrag) { gest.mode = "drag"; td.classList.add("drag-src"); if (navigator.vibrate) navigator.vibrate(8); }   // 指でも長押し後はドラッグできる
+      else if (kind === "g" || kind === "d") { openCellEditor(kind, li, k, "", gest.type); gest.mode = "done"; }
+      else { gest.mode = "done"; }
+    }, LONG_PRESS_MS);
+  }
+  if (gest.type === "mouse") e.preventDefault();
+}
+
+function onSheetPointerMove(e) {
+  if (!gest || gest.id !== e.pointerId) return;
+  const dx = e.clientX - gest.x0, dy = e.clientY - gest.y0;
+  const dist = Math.hypot(dx, dy);
+  const tol = gest.type === "mouse" ? MOVE_TOL_MOUSE : MOVE_TOL_TOUCH;
+  if (gest.mode === "tap" && dist > tol) {
+    clearTimeout(gest.timer);
+    if (gest.type === "touch") gest.mode = "scroll";
+    else if (gest.canDrag) { gest.mode = "drag"; gest.td.classList.add("drag-src"); if (gest.blk) { pushUndo(); gest.blkSnap = JSON.stringify(state.doc.sheet); } }
+    else gest.mode = "none";
+  }
+  if (gest.mode === "shaku") {
+    e.preventDefault();
+    gest.b1 = shakuBoundaryAtY(gest.b0, gest.y0, e.clientY);
+    const lo = Math.min(gest.b0, gest.b1), hi = Math.max(gest.b0, gest.b1);
+    state.shakuSel = hi > lo ? { from: lo, to: hi - 1 } : null;
+    paintShakuSelection();
+  } else if (gest.mode === "scroll") {
+    main.scrollTop -= (e.clientY - gest.ly);
+    main.scrollLeft -= (e.clientX - gest.lx);
+  } else if (gest.mode === "dur") {
+    e.preventDefault();
+    const target = Math.max(1, Math.min(24 * 60 * 10, gest.startD + Math.round(dy / Math.max(8, gest.rowH))));
+    gest.targetD = target;
+    const dh = state.sheetDom.table.querySelector(".dur-handle");
+    if (dh) dh.textContent = `⇕ 尺 ${komaToShaku(gest.startD)} → ${komaToShaku(target)}（${target}）`;
+  } else if (gest.mode === "drag") {
+    e.preventDefault();
+    // 行は幾何で決める（列から外れても、要素判定が効かない環境でも動く）
+    const k = rowAtY(gest.k, gest.y0, e.clientY);
+    const dom = state.sheetDom;
+    dom.table.querySelectorAll(".drag-target").forEach(x => x.classList.remove("drag-target"));
+    const target = dom.cellsByKey.get(cellKey(gest.kind, gest.li, k));
+    if (target) {
+      gest.dragTo = k;
+      if (gest.blk) {
+        // ブロックは即時に動かして見せる
+        const blocks = blocksFor(gest.kind), D = totalFrames(state.doc.sheet);
+        if (gest.blkMode === "end") setBlockEnd(blocks, gest.blk, k, D);
+        else if (gest.blkMode === "start") setBlockStart(blocks, gest.blk, k);
+        else moveBlock(blocks, gest.blk, k - gest.blkOffset, D);
+        paintSheet();
+      } else target.classList.add("drag-target");
+    }
+  }
+  gest.lx = e.clientX; gest.ly = e.clientY;
+}
+
+function onSheetPointerUp(e) {
+  if (!gest || gest.id !== e.pointerId) return;
+  clearTimeout(gest.timer);
+  const g = gest;
+  const dom = state.sheetDom;
+  if (dom) dom.table.querySelectorAll(".drag-src,.drag-target").forEach(x => x.classList.remove("drag-src", "drag-target"));
+  try { $("sheetBox").releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  if (g.mode === "shaku") {
+    if (state.shakuSel) showShakuPanel();
+  } else if (g.mode === "dur") {
+    if (g.targetD !== g.startD) { pushUndo(); setDuration(state.doc.sheet, g.targetD); state.sheetDom = null; markDirty(); renderMain(); }
+    else paintSheet();
+  } else if (g.mode === "tap" && !g.longFired) {
+    if (g.kind === "g" || g.kind === "d") handleCellTap(g.kind, g.li, g.k, g.type);
+    else handleBlockTap(g.kind, g.li, g.k, g.type);
+  } else if (g.mode === "drag" && g.blk) {
+    if (g.blkSnap && g.blkSnap === JSON.stringify(state.doc.sheet)) state.undo.pop(); else { markDirty(); }
+  } else if (g.mode === "drag" && g.dragTo && g.dragTo !== g.k) {
+    const cells = cellsFor(g.kind, g.li);
+    pushUndo();
+    const landed = moveChangePoint(cells, g.k - 1, g.dragTo - 1);
+    if (landed === g.k - 1) state.undo.pop(); else { markDirty(); paintSheet(); renderChecks(); }
+  }
+  g.suppressClickUntil = Date.now() + (g.mode === "tap" ? 0 : 400);
+  setTimeout(() => { if (gest === g) gest = null; }, 450);
+}
+
+function onSheetPointerCancel(e) {
+  if (!gest || gest.id !== e.pointerId) return;
+  clearTimeout(gest.timer);
+  const dom = state.sheetDom;
+  if (dom) dom.table.querySelectorAll(".drag-src,.drag-target").forEach(x => x.classList.remove("drag-src", "drag-target"));
+  if (gest.mode === "dur") paintSheet();
+  gest = null;
+}
+
+/* 1タップの意味は1つ:
+   変化点（番号・×が書いてある所）→ その場で書き直す
+   原画と原画の間のホールド → 中割○の付け外し
+   それ以外のホールド（×の中、次の原画が無い末尾）→ そこから新しい番号 */
+function handleCellTap(kind, li, k, ptype) {
+  const cells = cellsFor(kind, li);
+  const i = k - 1;
+  const v = cells[i];
+  if (isChangePoint(cells, i)) { openCellEditor(kind, li, k, isEmptyCell(v) ? "" : v, ptype); return; }
+  if (isTick(v)) { pushUndo(); toggleTickAt(cells, i); markDirty(); paintSheet(); return; }
+  if (canTickAt(cells, i)) { pushUndo(); toggleTickAt(cells, i); markDirty(); paintSheet(); return; }
+  openCellEditor(kind, li, k, "", ptype);          // ×のホールド／次の原画が無いホールド → そこから新しい番号
+}
+
+/* 台詞・カメラ: 空きをタップ → そこに置いて書く。ブロックをタップ → 書き直す。端をドラッグ → 伸縮、真ん中をドラッグ → 移動 */
+function handleBlockTap(kind, lane, k, ptype) {
+  const blocks = blocksFor(kind);
+  let b = blockAt(kind, lane, k);
+  let isNew = false;
+  if (!b) {
+    const span = freeSpanAt(blocks, lane, k, totalFrames(state.doc.sheet));
+    if (!span) return;
+    pushUndo();
+    b = kind === "s" ? { from: span.from, to: span.to, speaker: "", text: "", lane } : { from: span.from, to: span.to, text: "", lane };
+    blocks.push(b);
+    isNew = true;
+    paintSheet();
+  }
+  if (kind === "s") openDialoguePopup(b, isNew); else openCameraPopup(b, isNew);
+}
+
+/* カメラ: 動きの種類はチップ（FIX/PAN/T.U/T.B/Follow/F.I/F.O/O.L/SL）、前後のフレーム名は A〜F のチップか書く、補足は自由文。外を触れば閉じる、空なら消える */
+function openCameraPopup(b, isNew) {
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const anchorTd = state.sheetDom.cellsByKey.get(cellKey("c", b.lane || 0, b.from));
+  let changed = isNew;
+  const kindChip = k => `<span class="chip" data-kind="${k}" style="${CHIP_CSS}${(b.kind || "") === k ? CHIP_ON : ""}">${k}</span>`;
+  const labelChips = (which) => ["", "A", "B", "C", "D"].map(l => `<span class="chip" data-${which}="${l}" style="${CHIP_CSS}padding:4px 8px;${(b[which] || "") === l ? CHIP_ON : ""}">${l || "—"}</span>`).join("");
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">カメラ — ${b.from}〜${b.to}コマ</div>
+    <div id="cpKinds">${CAMERA_KINDS.map(kindChip).join("")}<span class="chip" data-kind="" style="${CHIP_CSS}${!b.kind ? CHIP_ON : ""}">自由文</span></div>
+    <div style="margin-top:6px;font-size:11px;color:var(--pencil)">前のフレーム</div><div id="cpFrom">${labelChips("fromLabel")}<input id="cpFromIn" placeholder="他" size="3" value="${esc(["", "A", "B", "C", "D"].includes(b.fromLabel || "") ? "" : (b.fromLabel || ""))}" style="font:inherit;font-size:12px;border:1px solid var(--rule);border-radius:3px;padding:4px 6px;width:44px"></div>
+    <div style="margin-top:4px;font-size:11px;color:var(--pencil)">後のフレーム</div><div id="cpTo">${labelChips("toLabel")}<input id="cpToIn" placeholder="他" size="3" value="${esc(["", "A", "B", "C", "D"].includes(b.toLabel || "") ? "" : (b.toLabel || ""))}" style="font:inherit;font-size:12px;border:1px solid var(--rule);border-radius:3px;padding:4px 6px;width:44px"></div>
+    <input id="cpText" placeholder="補足（Q.PAN、フェアリング、A1⋈A2 など）" value="${esc(b.text || "")}" style="margin-top:6px;width:100%;font:inherit;font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:6px 8px">
+  `, anchorTd ? anchorTd.getBoundingClientRect() : { left: 200, right: 300, top: 200 });
+  const refresh = () => {
+    el.querySelectorAll("#cpKinds .chip").forEach(x => x.setAttribute("style", CHIP_CSS + ((b.kind || "") === x.dataset.kind ? CHIP_ON : "")));
+    el.querySelectorAll("#cpFrom .chip").forEach(x => x.setAttribute("style", CHIP_CSS + "padding:4px 8px;" + ((b.fromLabel || "") === x.dataset.fromlabel ? CHIP_ON : "")));
+    el.querySelectorAll("#cpTo .chip").forEach(x => x.setAttribute("style", CHIP_CSS + "padding:4px 8px;" + ((b.toLabel || "") === x.dataset.tolabel ? CHIP_ON : "")));
+    paintSheet();
+  };
+  el.querySelectorAll("#cpKinds .chip").forEach(c => c.addEventListener("click", () => { b.kind = c.dataset.kind; changed = true; refresh(); }));
+  el.querySelectorAll("#cpFrom .chip").forEach(c => c.addEventListener("click", () => { b.fromLabel = c.dataset.fromlabel; el.querySelector("#cpFromIn").value = ""; changed = true; refresh(); }));
+  el.querySelectorAll("#cpTo .chip").forEach(c => c.addEventListener("click", () => { b.toLabel = c.dataset.tolabel; el.querySelector("#cpToIn").value = ""; changed = true; refresh(); }));
+  el.querySelector("#cpFromIn").addEventListener("input", ev => { b.fromLabel = ev.target.value.trim().toUpperCase(); changed = true; refresh(); });
+  el.querySelector("#cpToIn").addEventListener("input", ev => { b.toLabel = ev.target.value.trim().toUpperCase(); changed = true; refresh(); });
+  el.querySelector("#cpText").addEventListener("input", ev => { b.text = ev.target.value.trim(); changed = true; paintSheet(); });
+  const finish = () => {
+    if (!b.kind && !b.text && !b.fromLabel && !b.toLabel) { const arr = doc.sheet.camera; const i = arr.indexOf(b); if (i >= 0) arr.splice(i, 1); changed = true; }
+    if (changed) { if (!isNew) { state.undo.push(snapshot); state.redo = []; } markDirty(); }
+    paintSheet();
+  };
+  popupOnClose = finish;
+}
+
+/* 台詞: 話者はこのシートに出てきた名前のチップから（無ければ書く）、文は欄に。外を触れば閉じる。空のまま閉じたら消える */
+function openDialoguePopup(b, isNew) {
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const anchorTd = state.sheetDom.cellsByKey.get(cellKey("s", b.lane || 0, b.from));
+  const speakers = Object.keys(speakerColorMap());
+  const colors = speakerColorMap();
+  let changed = isNew;
+  const chip = nm => `<span class="chip" data-sp="${esc(nm)}" style="${CHIP_CSS}border-color:${colors[nm] || "var(--rule-mid)"};color:${colors[nm] || "var(--ink)"};${nm === (b.speaker || "") ? "background:" + (colors[nm] || "var(--ink)") + ";color:#fff;" : ""}">${esc(nm)}</span>`;
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">台詞 — ${b.from}〜${b.to}コマ</div>
+    <div id="dpSpeakers">${speakers.map(chip).join("")}<span class="chip" data-sp="" style="${CHIP_CSS}${!b.speaker ? CHIP_ON : ""}">話者なし</span></div>
+    <div id="dpKinds" style="margin-top:4px">${DIALOGUE_KINDS.map(k => `<span class="chip" data-kind="${k}" style="${CHIP_CSS}padding:4px 8px;${(b.kind || "") === k ? CHIP_ON : ""}" title="${DIALOGUE_KIND_LABELS[k]}">${k || "ON"}</span>`).join("")}</div>
+    <input id="dpSpeaker" placeholder="新しい話者" value="${esc(speakers.includes(b.speaker || "") ? "" : (b.speaker || ""))}" style="margin-top:6px;width:100%;font:inherit;font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:6px 8px">
+    <textarea id="dpText" placeholder="台詞" style="margin-top:6px;min-height:52px;font-family:inherit">${esc(b.text || "")}</textarea>
+  `, anchorTd ? anchorTd.getBoundingClientRect() : { left: 200, right: 300, top: 200 });
+  const setSpeaker = nm => { if (b.speaker !== nm) { b.speaker = nm; changed = true; } paintSheet(); el.querySelectorAll("#dpSpeakers .chip").forEach(x => { const on = x.dataset.sp === (b.speaker || ""); const c = colors[x.dataset.sp]; x.setAttribute("style", CHIP_CSS + (c ? "border-color:" + c + ";color:" + c + ";" : "") + (on ? "background:" + (c || "var(--ink)") + ";color:#fff;" : "")); }); };
+  el.querySelectorAll("#dpSpeakers .chip").forEach(c => c.addEventListener("click", () => { setSpeaker(c.dataset.sp); el.querySelector("#dpSpeaker").value = ""; }));
+  el.querySelectorAll("#dpKinds .chip").forEach(c => c.addEventListener("click", () => {
+    if ((b.kind || "") !== c.dataset.kind) { b.kind = c.dataset.kind; changed = true; }
+    el.querySelectorAll("#dpKinds .chip").forEach(x => x.setAttribute("style", CHIP_CSS + "padding:4px 8px;" + ((b.kind || "") === x.dataset.kind ? CHIP_ON : "")));
+    paintSheet();
+  }));
+  el.querySelector("#dpSpeaker").addEventListener("input", ev => { const v = ev.target.value.trim(); if (v) setSpeaker(v); });
+  el.querySelector("#dpText").addEventListener("input", ev => { const v = ev.target.value.replace(/\r?\n/g, " "); if (b.text !== v) { b.text = v; changed = true; paintSheet(); } });
+  const finish = () => {
+    if (!b.speaker && !b.text.trim() && b.kind !== "SE") { const arr = doc.sheet.dialogue; const i = arr.indexOf(b); if (i >= 0) arr.splice(i, 1); changed = true; }
+    if (changed) { if (!isNew) { state.undo.push(snapshot); state.redo = []; } markDirty(); }
+    paintSheet();
+  };
+  el.dataset.onclose = "1"; popupOnClose = finish;
+  setTimeout(() => { const t = el.querySelector("#dpText"); t.focus(); }, 0);
+}
+
+/* ========= その場入力（マスの真上に出る）＋ ペンパッド ========= */
+
+let inlineEd = null;   // { ta, pad, li, k, snapshot, td, anchorFn }
+
+function positionInline() {
+  if (!inlineEd) return;
+  const td = inlineEd.anchorFn();
+  if (!td) return;
+  const r = td.getBoundingClientRect();
+  const vv = window.visualViewport && window.visualViewport.width > 0 ? window.visualViewport : null;
+  const de = document.documentElement;
+  const vx = vv ? vv.offsetLeft : 0, vy = vv ? vv.offsetTop : 0;
+  const vw = (vv ? vv.width : 0) || window.innerWidth || de.clientWidth || 100000, vh = (vv ? vv.height : 0) || window.innerHeight || de.clientHeight || 100000;
+  const ta = inlineEd.ta, pad = inlineEd.pad;
+  const w = inlineEd.wide ? Math.max(160, r.width + 8) : Math.max(64, r.width + 8);
+  const h = inlineEd.multi ? Math.max(80, r.height + 8) : 34;
+  if (inlineEd.multi) { ta.style.height = h + "px"; ta.style.whiteSpace = "pre-wrap"; }
+  let left = inlineEd.wide ? r.left - 4 : r.left + r.width / 2 - w / 2;
+  let top = inlineEd.wide ? r.top - 4 : r.top - h - 6;      // マスは真上（指とキーボードで隠れない）、見出しは重ねる
+  if (top < vy + 6) top = r.bottom + 6;
+  left = Math.max(vx + 6, Math.min(left, vx + vw - w - 6));
+  top = Math.max(vy + 6, Math.min(top, vy + vh - h - 6));
+  ta.style.left = left + "px"; ta.style.top = top + "px"; ta.style.width = w + "px";
+  if (pad) {
+    const pw = pad.offsetWidth || 140, ph = pad.offsetHeight || 190;
+    let pl = r.right + 10, pt = r.top - ph / 2 + r.height / 2;
+    if (pl + pw > vx + vw - 6) pl = r.left - pw - 10;
+    if (pl < vx + 6) pl = vx + 6;
+    pt = Math.max(vy + 6, Math.min(pt, vy + vh - ph - 6));
+    pad.style.left = pl + "px"; pad.style.top = pt + "px";
+  }
+}
+
+function openCellEditor(kind, li, k, initial, ptype) {
+  closeInlineEditor({ silent: true });
+  const doc = state.doc; if (!doc) return;
+  const td = state.sheetDom && state.sheetDom.cellsByKey.get(cellKey(kind, li, k));
+  if (!td) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const ta = document.createElement("textarea");
+  ta.className = "inline-editor";
+  ta.rows = 1; ta.value = initial == null ? "" : String(initial);
+  ta.spellcheck = false; ta.autocomplete = "off"; ta.setAttribute("autocorrect", "off"); ta.setAttribute("autocapitalize", "off");
+  const penLike = ptype === "touch" || ptype === "pen";
+  if (penLike) ta.setAttribute("inputmode", "none");    // ソフトキーボードを出さない。数字はパッドか Scribble
+  ta.setAttribute("aria-label", "セル番号を書く");
+  document.body.appendChild(ta);
+  td.classList.add("editing");
+  const pad = buildPenPad(ta);
+  document.body.appendChild(pad);
+  inlineEd = { ta, pad, li, k, snapshot, td, kind: "cell", changed: false,
+    anchorFn: () => state.sheetDom ? state.sheetDom.cellsByKey.get(cellKey(kind, li, k)) : null };
+  const apply = () => {
+    const cells = cellsFor(kind, li);
+    const before = JSON.stringify(cells);
+    setLabelAt(cells, k - 1, ta.value);
+    if (JSON.stringify(cells) !== before) { inlineEd.changed = true; paintSheet(); renderChecks(); }
+  };
+  ta.addEventListener("input", () => { ta.value = ta.value.replace(/\r?\n/g, ""); apply(); positionInline(); });
+  ta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); doc.sheet = JSON.parse(snapshot); closeInlineEditor({ silent: true }); paintSheet(); renderChecks(); return; }
+    if (ev.key === "Enter") { ev.preventDefault(); closeInlineEditor(); return; }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (inlineEd && inlineEd.ta === ta && document.activeElement !== ta) closeInlineEditor(); }, 0));
+  ta.addEventListener("pointerdown", ev => ev.stopPropagation());
+  window.addEventListener("resize", positionInline, true);
+  main.addEventListener("scroll", positionInline, true);
+  if (window.visualViewport) { window.visualViewport.addEventListener("resize", positionInline); window.visualViewport.addEventListener("scroll", positionInline); }
+  positionInline();
+  setTimeout(() => { try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); } ta.select(); positionInline(); }, 0);
+}
+
+function closeInlineEditor(opts) {
+  if (!inlineEd) return;
+  const ed = inlineEd; inlineEd = null;
+  if (ed.td) ed.td.classList.remove("editing");
+  if (ed.ta.parentNode) ed.ta.parentNode.removeChild(ed.ta);
+  if (ed.pad && ed.pad.parentNode) ed.pad.parentNode.removeChild(ed.pad);
+  window.removeEventListener("resize", positionInline, true);
+  main.removeEventListener("scroll", positionInline, true);
+  if (window.visualViewport) { window.visualViewport.removeEventListener("resize", positionInline); window.visualViewport.removeEventListener("scroll", positionInline); }
+  if (!(opts && opts.silent) && ed.changed && ed.kind === "cell") {
+    // 1回の書き直しを 1回の undo にする
+    state.undo.push(ed.snapshot); if (state.undo.length > 300) state.undo.shift(); state.redo = [];
+    markDirty(); renderTools();
+  }
+}
+
+/* ペンパッド: 数字・×・ダッシュ・消す・閉じる。ペンで押してもフォーカスは入力欄に残る */
+function buildPenPad(ta, opts) {
+  const o = opts || {};
+  const pad = document.createElement("div");
+  pad.className = "pen-pad";
+  const keys = o.keys || ["7", "8", "9", "4", "5", "6", "1", "2", "3", "×", "0", "⌫"];
+  if (keys.length <= 3) pad.style.gridTemplateColumns = "repeat(" + keys.length + ", 40px)";
+  keys.forEach(kv => {
+    if (kv === "") { const sp = document.createElement("span"); pad.appendChild(sp); return; }
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = kv;
+    if (kv === "✓") b.classList.add("act");
+    if (kv === "×") b.classList.add("shu");
+    b.addEventListener("pointerdown", ev => { ev.preventDefault(); ev.stopPropagation(); });   // blur させない
+    b.addEventListener("click", ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      if (!inlineEd || inlineEd.ta !== ta) return;
+      if (kv === "⌫") ta.value = ta.value.slice(0, -1);
+      else if (kv === "×") ta.value = "×";
+      else if (kv === "+") ta.value = ta.value + "+";
+      else ta.value = (ta.value === "×" ? "" : ta.value) + kv;
+      ta.dispatchEvent(new Event("input"));
+      try { ta.focus({ preventScroll: true }); } catch (err) { /* ignore */ }
+    });
+    pad.appendChild(b);
+  });
+  pad.addEventListener("pointerdown", ev => { ev.preventDefault(); ev.stopPropagation(); });
+  return pad;
+}
+
+/* 台詞・カメラの入力欄: ブロックの先頭マスに重ねる。台詞は「話者｜台詞」（｜が無ければ台詞だけ）。空のまま閉じたら消える */
+function openBlockEditor(kind, b, isNew) {
+  closeInlineEditor({ silent: true });
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const ta = document.createElement("textarea");
+  ta.className = "inline-editor blk-editor"; ta.rows = 1; ta.spellcheck = false;
+  ta.value = kind === "s" ? ((b.speaker ? b.speaker + "｜" : "") + (b.text || "")) : (b.text || "");
+  ta.placeholder = kind === "s" ? "話者｜台詞" : "PAN A→B など";
+  ta.style.textAlign = "left";
+  document.body.appendChild(ta);
+  const anchor = () => state.sheetDom ? state.sheetDom.cellsByKey.get(cellKey(kind, b.lane || 0, b.from)) : null;
+  inlineEd = { ta, pad: null, li: b.lane || 0, k: b.from, snapshot, td: anchor(), kind: "block", changed: isNew, wide: true, anchorFn: anchor };
+  const apply = () => {
+    const v = ta.value.replace(/\r?\n/g, "");
+    if (kind === "s") {
+      const m = v.match(/^(.*?)[｜|](.*)$/);
+      const sp = m ? m[1].trim() : "", tx = m ? m[2].trim() : v.trim();
+      if (b.speaker !== sp || b.text !== tx) { b.speaker = sp; b.text = tx; inlineEd.changed = true; }
+    } else if (b.text !== v.trim()) { b.text = v.trim(); inlineEd.changed = true; }
+    paintSheet();
+  };
+  ta.addEventListener("input", () => { ta.value = ta.value.replace(/\r?\n/g, ""); apply(); positionInline(); });
+  ta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); doc.sheet = JSON.parse(snapshot); closeInlineEditor({ silent: true }); paintSheet(); return; }
+    if (ev.key === "Enter") { ev.preventDefault(); finish(); }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (inlineEd && inlineEd.ta === ta && document.activeElement !== ta) finish(); }, 0));
+  ta.addEventListener("pointerdown", ev => ev.stopPropagation());
+  positionInline();
+  setTimeout(() => { ta.focus(); ta.select(); positionInline(); }, 0);
+  function finish() {
+    const ed = inlineEd; if (!ed) return;
+    closeInlineEditor({ silent: true });
+    const empty = kind === "s" ? (!b.speaker && !b.text) : !b.text;
+    if (empty) { const arr = blocksFor(kind); const i = arr.indexOf(b); if (i >= 0) arr.splice(i, 1); }
+    if (ed.changed || empty) { if (!isNew) { state.undo.push(ed.snapshot); state.redo = []; } markDirty(); }
+    paintSheet();
+  }
+}
+
+/* 列名・尺: 同じその場入力で */
+function openLayerNameEditor(th, li) {
+  closeInlineEditor({ silent: true });
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const ta = document.createElement("textarea");
+  ta.className = "inline-editor"; ta.rows = 1; ta.value = doc.sheet.layers[li].name; ta.spellcheck = false;
+  document.body.appendChild(ta);
+  inlineEd = { ta, pad: null, li, k: 0, snapshot, td: null, kind: "layer", changed: false, anchorFn: () => th };
+  ta.addEventListener("input", () => {
+    ta.value = ta.value.replace(/\r?\n/g, "");
+    const name = ta.value.trim();
+    if (name && !doc.sheet.layers.some((L, i) => i !== li && L.name === name)) { doc.sheet.layers[li].name = name; inlineEd.changed = true; paintSheet(); }
+    positionInline();
+  });
+  ta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); doc.sheet = JSON.parse(snapshot); closeInlineEditor({ silent: true }); paintSheet(); return; }
+    if (ev.key === "Enter") { ev.preventDefault(); finishLayerEditor(); }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (inlineEd && inlineEd.ta === ta) finishLayerEditor(); }, 0));
+  ta.addEventListener("pointerdown", ev => ev.stopPropagation());
+  positionInline();
+  setTimeout(() => { ta.focus(); ta.select(); positionInline(); }, 0);
+  function finishLayerEditor() {
+    const ed = inlineEd; if (!ed) return;
+    closeInlineEditor({ silent: true });
+    if (ed.changed) { state.undo.push(ed.snapshot); state.redo = []; markDirty(); renderTools(); renderChecks(); renderBelow(); }
+  }
+}
+
+function openDurationEditor(chip) {
+  closeInlineEditor({ silent: true });
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  const ta = document.createElement("textarea");
+  ta.className = "inline-editor"; ta.rows = 1; ta.value = komaToShaku(doc.sheet.duration); ta.spellcheck = false;
+  ta.style.minWidth = "90px";
+  document.body.appendChild(ta);
+  const pad = buildPenPad(ta, { keys: ["7", "8", "9", "4", "5", "6", "1", "2", "3", "+", "0", "⌫"] });
+  document.body.appendChild(pad);
+  inlineEd = { ta, pad, li: -1, k: 0, snapshot, td: null, kind: "duration", changed: false, anchorFn: () => document.querySelector('[data-head="duration"]') || chip };
+  const apply = () => {
+    const n = shakuToKoma(ta.value);
+    if (n && n >= 1 && n <= 24 * 60 * 10 && n !== doc.sheet.duration) { setDuration(doc.sheet, n); inlineEd.changed = true; state.sheetDom = null; renderSheetDom(); renderChecks(); renderHeadOnly(); }
+  };
+  ta.addEventListener("input", () => { ta.value = ta.value.replace(/[^\d+]/g, ""); apply(); positionInline(); });
+  ta.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { ev.preventDefault(); doc.sheet = JSON.parse(snapshot); state.sheetDom = null; closeInlineEditor({ silent: true }); renderMain(); return; }
+    if (ev.key === "Enter") { ev.preventDefault(); finish(); }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (inlineEd && inlineEd.ta === ta && document.activeElement !== ta) finish(); }, 0));
+  ta.addEventListener("pointerdown", ev => ev.stopPropagation());
+  positionInline();
+  setTimeout(() => { ta.focus(); ta.select(); positionInline(); }, 0);
+  function finish() {
+    const ed = inlineEd; if (!ed) return;
+    closeInlineEditor({ silent: true });
+    if (ed.changed) { state.undo.push(ed.snapshot); state.redo = []; markDirty(); }
+    renderTools();
+  }
+}
+
+function addLayer() {
+  const doc = state.doc; if (!doc) return;
+  pushUndo();
+  doc.sheet.layers.push({ name: nextLayerName(doc.sheet), cells: new Array(doc.sheet.duration).fill(EMPTY) });
+  state.sheetDom = null;
+  markDirty(); renderMain();
+}
+
+/* ========= 朱を書く（コマ番号をタップ → その行に。列と種類はチップで、文はペン／Scribble） ========= */
+
+let popupEl = null, popupOnClose = null;
+function closePopups() {
+  const fn = popupOnClose; popupOnClose = null;
+  if (popupEl && popupEl.parentNode) popupEl.parentNode.removeChild(popupEl); popupEl = null; popupAnchorFn = null;
+  document.removeEventListener("pointerdown", onDocPointerDownForPopup, true);
+  main.removeEventListener("scroll", positionPopup, true);
+  window.removeEventListener("resize", positionPopup, true);
+  if (fn) fn();
+}
+function onDocPointerDownForPopup(e) { if (popupEl && !popupEl.contains(e.target)) closePopups(); }
+let popupAnchorFn = null;
+function positionPopup() {
+  const el = popupEl; if (!el || !popupAnchorFn) return;
+  const anchorRect = popupAnchorFn(); if (!anchorRect) return;
+  const vv = window.visualViewport && window.visualViewport.width > 0 ? window.visualViewport : null;
+  const vw = (vv ? vv.width : 0) || window.innerWidth || document.documentElement.clientWidth || 100000, vh = (vv ? vv.height : 0) || window.innerHeight || document.documentElement.clientHeight || 100000;
+  const w = el.offsetWidth || 300;
+  let left = anchorRect.right + 10, top = anchorRect.top - 10;
+  if (left + w > vw - 6) left = Math.max(6, anchorRect.left - w - 10);
+  top = Math.max(6, Math.min(top, vh - el.offsetHeight - 6));
+  el.style.left = left + "px"; el.style.top = top + "px";
+}
+function showPopup(html, anchor) {
+  closePopups(); closeInlineEditor();
+  const el = document.createElement("div");
+  el.className = "pen-pop";
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  popupEl = el;
+  popupAnchorFn = typeof anchor === "function" ? anchor : () => anchor;
+  positionPopup();
+  main.addEventListener("scroll", positionPopup, true);
+  window.addEventListener("resize", positionPopup, true);
+  setTimeout(() => document.addEventListener("pointerdown", onDocPointerDownForPopup, true), 0);
+  return el;
+}
+const CHIP_CSS = "display:inline-block;margin:2px;padding:6px 10px;border:1px solid var(--rule-mid);border-radius:14px;background:var(--paper);color:var(--ink);font-size:12px;cursor:pointer;min-height:32px;";
+const CHIP_ON = "background:var(--ink);color:var(--paper);border-color:var(--ink);";
+
+function openAnnotationPopup(k, anchorEl) {
+  const doc = state.doc; if (!doc) return;
+  const layers = doc.sheet.layers.map(L => L.name);
+  let sel = { layer: layers[0] || "", kind: "shusei", end: k };
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">朱を書く — ${k}コマ目から</div>
+    <div id="apLayers">${["全体"].concat(layers).map(n => `<span class="chip" data-layer="${esc(n)}" style="${CHIP_CSS}${(n === "全体" ? "" : n) === sel.layer ? CHIP_ON : ""}">${esc(n)}</span>`).join("")}</div>
+    <div id="apKinds" style="margin-top:4px">${Object.entries(MEMO_KINDS).map(([kk, v]) => `<span class="chip" data-kind="${kk}" style="${CHIP_CSS}${kk === sel.kind ? CHIP_ON : ""}">${v.label}</span>`).join("")}</div>
+    <div style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:12px">〜 <span id="apEnd" class="num" style="border:1px dashed var(--rule-mid);padding:4px 8px;border-radius:3px">${k}</span>コマ目まで
+      <button type="button" class="ghost" id="apEndMinus" style="min-height:32px;padding:4px 10px">−</button><button type="button" class="ghost" id="apEndPlus" style="min-height:32px;padding:4px 10px">＋</button></div>
+    <textarea id="apText" placeholder="本文（ペン／Scribble でも書けます）" style="margin-top:6px;min-height:56px;font-family:inherit"></textarea>
+    <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end"><button type="button" class="ghost" id="apCancel">やめる</button><button type="button" id="apSave">書く</button></div>
+  `, anchorEl.getBoundingClientRect());
+  el.querySelectorAll("#apLayers .chip").forEach(c => c.addEventListener("click", () => {
+    sel.layer = c.dataset.layer === "全体" ? "" : c.dataset.layer;
+    el.querySelectorAll("#apLayers .chip").forEach(x => x.setAttribute("style", CHIP_CSS + ((x.dataset.layer === "全体" ? "" : x.dataset.layer) === sel.layer ? CHIP_ON : "")));
+  }));
+  el.querySelectorAll("#apKinds .chip").forEach(c => c.addEventListener("click", () => {
+    sel.kind = c.dataset.kind;
+    el.querySelectorAll("#apKinds .chip").forEach(x => x.setAttribute("style", CHIP_CSS + (x.dataset.kind === sel.kind ? CHIP_ON : "")));
+  }));
+  el.querySelector("#apEndMinus").addEventListener("click", () => { sel.end = Math.max(k, sel.end - 1); el.querySelector("#apEnd").textContent = sel.end; });
+  el.querySelector("#apEndPlus").addEventListener("click", () => { sel.end = Math.min(doc.sheet.duration, sel.end + 1); el.querySelector("#apEnd").textContent = sel.end; });
+  el.querySelector("#apCancel").addEventListener("click", closePopups);
+  el.querySelector("#apSave").addEventListener("click", () => {
+    const text = el.querySelector("#apText").value.trim();
+    doc.annotations.push({
+      id: "a" + Date.now().toString(36), kind: sel.kind, who: state.session.who, role: state.session.role, at: nowIso(),
+      anchor: { layer: sel.layer, komaStart: k, komaEnd: sel.end }, text, state: "要",
+      madeAgainst: doc.history.length, resolvedIn: null,
+    });
+    closePopups();
+    markDirty(); renderChecks(); paintSheet(); renderBelow();
+  });
+  setTimeout(() => el.querySelector("#apText").focus(), 0);
+}
+
+/* ========= 尺編集（カッティング）: 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす ========= */
+function shakuBoundaryFromEvent(td, clientY) {
+  // 境界 b は「b コマ目の上辺」（1 〜 D+1）。行の上半分なら上辺、下半分なら下辺
+  const k = Number(td.dataset.k);
+  const r = td.getBoundingClientRect();
+  return clientY < r.top + r.height / 2 ? k : k + 1;
+}
+function shakuBoundaryAtY(startB, y0, y) {
+  const D = totalFrames(state.doc.sheet);
+  return Math.max(1, Math.min(D + 1, startB + Math.round((y - y0) / sheetRowHeight())));
+}
+function paintShakuSelection() {
+  const dom = state.sheetDom; if (!dom) return;
+  dom.table.querySelectorAll("tr.shaku-sel").forEach(tr => tr.classList.remove("shaku-sel"));
+  const sel = state.shakuSel;
+  if (!sel) return;
+  for (let k = sel.from; k <= sel.to; k++) { const td = dom.cellsByKey.get(cellKey("g", 0, k)); if (td) td.parentElement.classList.add("shaku-sel"); }
+}
+function showShakuPanel() {
+  const sel = state.shakuSel; if (!sel || !state.sheetDom) return;
+  const td = state.sheetDom.cellsByKey.get(cellKey("g", state.doc.sheet.layers.length - 1, sel.to)) || state.sheetDom.cellsByKey.get(cellKey("g", 0, sel.to));
+  const count = sel.to - sel.from + 1;
+  const anchorFn = () => { const d = state.sheetDom; if (!d) return null; const t = d.cellsByKey.get(cellKey("g", state.doc.sheet.layers.length - 1, sel.to)) || d.cellsByKey.get(cellKey("g", 0, sel.to)); return t ? t.getBoundingClientRect() : null; };
+  const el = showPopup(`
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="num" style="font-size:15px;font-weight:800;color:var(--blue)">${komaToShaku(count)}</span><span style="font-size:11px;color:var(--pencil)">（${count}コマ・${sel.from}〜${sel.to}）</span>
+      <span style="flex:1"></span>
+      <button type="button" id="skCut" style="background:var(--blue)">切る</button>
+      <button type="button" class="ghost" id="skStretch" style="color:var(--blue);border-color:var(--blue)">伸ばす</button>
+    </div>`, anchorFn);
+  el.style.width = "auto"; el.dataset.shaku = "1"; positionPopup();
+  const doc = state.doc;
+  el.querySelector("#skCut").addEventListener("click", () => {
+    pushUndo();
+    if (deleteFrames(doc.sheet, sel.from, count)) shiftAnnotations(doc.annotations, sel.from, -count); else state.undo.pop();
+    state.shakuSel = null; closePopups(); state.sheetDom = null; markDirty(); renderMain();
+    setStatus(false, `${sel.from}〜${sel.to}コマ目（${komaToShaku(count)}）を切った`);
+  });
+  el.querySelector("#skStretch").addEventListener("click", () => {
+    pushUndo();
+    insertFrames(doc.sheet, sel.from, count); shiftAnnotations(doc.annotations, sel.from, count);
+    state.shakuSel = null; closePopups(); state.sheetDom = null; markDirty(); renderMain();
+    setStatus(false, `${sel.from}コマ目の前に ${komaToShaku(count)} 伸ばした`);
+  });
+  popupOnClose = () => { state.shakuSel = null; paintShakuSelection(); };
+}
+
+/* ========= 余尺: 頭と尻にそれぞれ足す。尺は変えない。足した分は薄いグレー ========= */
+function openSlackPopup(anchorEl) {
+  const doc = state.doc; if (!doc) return;
+  const snapshot = JSON.stringify(doc.sheet);
+  let changed = false;
+  const row = (label, id) => `<div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="width:2.5em">${label}</span>
+      <button type="button" class="ghost" data-${id}="-6" style="min-height:34px;padding:4px 10px">−6</button><button type="button" class="ghost" data-${id}="-1" style="min-height:34px;padding:4px 10px">−1</button>
+      <span id="${id}N" class="num" style="min-width:2.5em;text-align:center;font-size:15px;font-weight:700"></span>
+      <button type="button" class="ghost" data-${id}="1" style="min-height:34px;padding:4px 10px">＋1</button><button type="button" class="ghost" data-${id}="6" style="min-height:34px;padding:4px 10px">＋6</button><button type="button" class="ghost" data-${id}="24" style="min-height:34px;padding:4px 10px">＋24</button></div>`;
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em">余尺（頭・尻に足す。足した行は薄いグレー）</div>
+    ${row("頭", "head")}${row("尻", "tail")}
+  `, anchorEl.getBoundingClientRect());
+  el.style.width = "auto";
+  const refresh = () => { el.querySelector("#headN").textContent = doc.sheet.slackHead || 0; el.querySelector("#tailN").textContent = doc.sheet.slack || 0; state.sheetDom = null; renderSheetDom(); renderChecks(); };
+  el.querySelectorAll("[data-head]").forEach(b => b.addEventListener("click", () => {
+    const d = setSlackHead(doc.sheet, (doc.sheet.slackHead || 0) + Number(b.dataset.head));
+    if (d) { shiftAnnotations(doc.annotations, 1, d); changed = true; refresh(); }
+  }));
+  el.querySelectorAll("[data-tail]").forEach(b => b.addEventListener("click", () => {
+    if (setSlack(doc.sheet, (doc.sheet.slack || 0) + Number(b.dataset.tail))) { changed = true; refresh(); }
+  }));
+  refresh();
+  popupOnClose = () => { if (changed) { state.undo.push(snapshot); state.redo = []; markDirty(); } renderTools(); };
+}
+
+/* ========= 上書き保存（受け渡し）: 誰が・どの役で・ひとこと。保存のたびに版が1つ重なる ========= */
+
+function openCommitPopup(opts) {
+  const doc = state.doc; if (!doc) return;
+  const o = opts || {};
+  const anchor = $("tSave") ? $("tSave").getBoundingClientRect() : { left: 100, right: 200, top: 100 };
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${o.onlyIdentity ? "いま作業している人" : "上書き保存 — 版 " + (doc.history.length + 1) + " として"}</div>
+    <div id="cpRoles">${VDTS_ROLES.map(r => `<span class="chip" data-role="${r}" style="${CHIP_CSS}${r === state.session.role ? CHIP_ON : ""}">${r}</span>`).join("")}</div>
+    <input id="cpWho" placeholder="名前" value="${esc(state.session.who)}" style="margin-top:6px;width:100%;font:inherit;font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:6px 8px">
+    ${o.onlyIdentity ? "" : `<textarea id="cpNote" placeholder="ひとこと（任意）" style="margin-top:6px;min-height:48px;font-family:inherit"></textarea>`}
+    <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end"><button type="button" class="ghost" id="cpCancel">やめる</button><button type="button" id="cpOk">${o.onlyIdentity ? "これで" : "上書き保存"}</button></div>
+  `, anchor);
+  el.querySelectorAll("#cpRoles .chip").forEach(c => c.addEventListener("click", () => {
+    state.session.role = c.dataset.role;
+    el.querySelectorAll("#cpRoles .chip").forEach(x => x.setAttribute("style", CHIP_CSS + (x.dataset.role === state.session.role ? CHIP_ON : "")));
+  }));
+  el.querySelector("#cpCancel").addEventListener("click", closePopups);
+  el.querySelector("#cpOk").addEventListener("click", async () => {
+    state.session.who = el.querySelector("#cpWho").value.trim();
+    const note = o.onlyIdentity ? "" : el.querySelector("#cpNote").value.trim();
+    closePopups();
+    renderTools();
+    if (o.onlyIdentity) return;
+    await saveVdts(note);
+  });
+  setTimeout(() => { const w = el.querySelector("#cpWho"); if (!w.value) w.focus(); }, 0);
+}
+
+async function ensureWritable(handle) {
+  if (!handle || !handle.createWritable) return false;
+  try {
+    if (handle.queryPermission && await handle.queryPermission({ mode: "readwrite" }) === "granted") return true;
+    if (handle.requestPermission) return await handle.requestPermission({ mode: "readwrite" }) === "granted";
+    return true;
+  } catch (e) { return false; }
+}
+/* 元ファイルの手がかり（開いたときの FileSystemFileHandle）。保存ダイアログを同じフォルダから開くのに使う */
+function startInHandle() { return state.src && state.src.handle && state.src.handle.kind === "file" ? state.src.handle : undefined; }
+
+/* 既定のファイル名: 作品名_話数_カット（シーンがあれば 作品名_話数_シーン_カット）。空の項は飛ばし、全部空なら元の名前 */
+function defaultStem(doc, fallback) {
+  const clean = v => String(v == null ? "" : v).trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "");
+  const parts = [clean(doc.cut.title), clean(fmtEpisode(doc.cut.episode)), clean(fmtScene(doc.cut.scene)), clean(fmtCut(doc.cut.cut))].filter(Boolean);
+  return parts.length ? parts.join("_") : String(fallback || "sheet").replace(/\.(xdts|tdts|vdts)$/i, "");
+}
+
+async function saveVdts(note, opts) {
+  const doc = state.doc; if (!doc || !state.src) return;
+  const o = opts || {};
+  // 「上書き保存」は必ず1版重ねる（内容が同じでも「この人が確認して渡した」事実が版として残る）。
+  // 版を戻したときは restoreVersion 側で既に重ねてあるので、ここでは重ねない
+  const stacked = o.noStack ? false : commitDoc(doc, { who: state.session.who, role: state.session.role, note, force: true });
+  const text = writeVdts(doc);
+  const stem = defaultStem(doc, state.src.basename);
+  const filename = stem + ".vdts";
+  try {
+    let handle = null;
+    // 開いているのが .vdts ならそのファイルへ上書き（初回だけ書き込み許可を聞かれる）。
+    // .xdts/.tdts を開いていたら初回は保存ダイアログ（元ファイルと同じフォルダから開く）、以後はその .vdts へ上書き
+    if (state.src.kind === "vdts" && await ensureWritable(state.src.handle)) handle = state.src.handle;
+    else if (window.showSaveFilePicker) {
+      const opt = { suggestedName: filename, types: [{ description: "VDTS", accept: { "application/octet-stream": [".vdts"] } }] };
+      const si = startInHandle(); if (si) opt.startIn = si;
+      handle = await window.showSaveFilePicker(opt);
+    }
+    if (handle) {
+      const w = await handle.createWritable(); await w.write(text); await w.close();
+      const f = await handle.getFile();
+      // 保存したファイルをこの文書の正本として登録（元の xdts/tdts の項目は置き換える）
+      const path = filename;
+      if (state.src.path !== path) state.files.delete(state.src.path);
+      let rec = state.files.get(path);
+      if (!rec) { rec = { handle, mtime: f.lastModified, kind: "vdts", result: null }; state.files.set(path, rec); }
+      rec.handle = handle; rec.mtime = f.lastModified; rec.kind = "vdts";
+      inspectText(path, rec, text, f.lastModified);
+      state.src = { path, basename: filename, kind: "vdts", handle, mtime: f.lastModified, originalName: state.src.originalName, originalHandle: state.src.originalHandle, originalKind: state.src.originalKind };
+      state.selectedPath = path;
+    } else {
+      downloadText(text, filename);
+    }
+    state.dirty = false; state.extChanged = false;
+    setStatus(false, ((stacked || o.noStack) ? "版 " + doc.history.length + " として上書き保存: " : "保存: ") + filename);
+    render();
+  } catch (e) {
+    if (e.name === "AbortError") { if (stacked) doc.history.pop(); return; }
+    if (stacked) doc.history.pop();
+    showError("保存できません: " + e.message);
+  }
+}
+
+async function exportDerived(kind) {
+  const doc = state.doc; if (!doc || !state.src) return;
+  const stem = defaultStem(doc, state.src.basename);
+  let text, filename;
+  const source = doc.sheet.douga.length && window.confirm("動画欄を書き出しますか？（「キャンセル」で原画欄）") ? "douga" : "genga";
+  if (kind === "xdts") { text = writeXdts(doc.sheet, { cut: doc.cut.cut, scene: doc.cut.scene, name: stem, source }); filename = stem + ".xdts"; }
+  else {
+    const withHistory = doc.history.length > 1 && window.confirm("履歴も sheet2, sheet3… として並べて書き出しますか？（東映DTS側での見え方は未検証。「キャンセル」で今の版だけ）");
+    const forAe = window.confirm("AE スクリプト（SUNRISE MOON TimeSheet 等、.tdts version 5 対応）向けに version 5 と名乗らせますか？（「キャンセル」で実物どおり version 7）");
+    text = writeTdts(doc, { withHistory, source, version: forAe ? 5 : 7 }); filename = stem + ".tdts";
+  }
+  try {
+    // 開いた元ファイルが同じ形式なら、そのファイルへの上書きを提案（黙っては上書きしない）
+    const srcHandle = state.src.originalHandle && state.src.originalHandle.kind === "file" ? state.src.originalHandle : null;
+    const originalName = state.src.originalName || state.src.basename;
+    if (srcHandle && state.src.originalKind === kind && window.confirm(`開いた元ファイル「${originalName}」を上書きしますか？（「キャンセル」で別名保存）`)) {
+      if (!(await ensureWritable(srcHandle))) throw new Error("書き込み許可が得られませんでした");
+      const w = await srcHandle.createWritable(); await w.write(text); await w.close();
+      setStatus(false, "上書き: " + originalName);
+      return;
+    }
+    if (window.showSaveFilePicker) {
+      const opt = { suggestedName: filename, types: [{ description: kind.toUpperCase(), accept: { "application/octet-stream": ["." + kind] } }] };
+      const si = startInHandle(); if (si) opt.startIn = si;
+      const h = await window.showSaveFilePicker(opt);
+      const w = await h.createWritable(); await w.write(text); await w.close();
+      setStatus(false, "書き出し: " + filename);
+    } else downloadText(text, filename);
+  } catch (e) { if (e.name !== "AbortError") showError("書き出せません: " + e.message); }
+}
+
+function downloadText(text, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "application/octet-stream" }));
+  a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+window.addEventListener("beforeunload", e => { if (state.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+function setStatus(watching, text) {
+  $("statusText").textContent = text || "";
+  $("status").hidden = !text;
+}
+function showError(msg) { const b = $("errorBox"); b.hidden = false; b.textContent = msg; }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+</script>
+</body>
+</html>

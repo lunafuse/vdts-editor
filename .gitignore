@@ -1,0 +1,3 @@
+*.memo.json
+samples/private/
+.DS_Store
