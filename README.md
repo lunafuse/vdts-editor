@@ -18,6 +18,16 @@ Open `vdts-editor.html` in Chrome or Edge (saving uses the File System Access AP
 - **xdts 書き出し** / **tdts 書き出し**、**取り込み**（他のシートの原画欄で差し替え）
 - 詳しくは画面左の「使い方」
 
+## 報告・要望 / Feedback
+
+画面左下の「報告・要望」欄から送れます（Google フォーム）。送られるのは書いた文・ビルド日付・ブラウザ名だけで、ファイルの中身や名前は送りません。実際のシートの中身や作品名・話数・カット番号は書かないでください。返信はできません。直したことは下の更新履歴に書きます。
+
+Use the "報告・要望" box at the bottom left (Google Form). Only your message, the build date and the browser name are sent — never file contents or names. Please don't include real sheet data, titles, episode or cut numbers. No replies; fixes are listed in the changelog below.
+
+## 更新履歴 / Changelog
+
+- 2026-08-19 — 公開。カットを書き換えたら上書きせず新規保存。版の閲覧中に触ったら「今に戻る」の出口を出す。文言から「朱」をやめ「修正指示・申し送り」に。報告・要望の欄
+
 ## VDTS 形式 / The VDTS format
 
 `docs/VDTS-format.md`（日本語）/ `docs/VDTS-format.en.md`（English）

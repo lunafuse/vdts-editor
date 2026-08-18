@@ -434,6 +434,17 @@
       <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・指示・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
     </ul>
   </div>
+
+  <div class="panel" id="feedbackPanel" hidden>
+    <div class="panel-title">報告・要望</div>
+    <div class="hint" style="margin-bottom:6px">実際のシートの中身や、作品名・話数・カット番号は書かないでください。<br>送るのはこの文と、バージョン・ブラウザ名だけです。<br>返信はできません。直したことは更新履歴に書きます。</div>
+    <textarea id="feedbackText" spellcheck="false" placeholder="不具合や要望を書く（症状・やったこと・期待した結果・機種）" style="min-height:72px"></textarea>
+    <div class="btn-row" style="margin-top:6px;align-items:center">
+      <button id="feedbackSend">送る</button>
+      <a id="feedbackFormLink" class="ghost" href="#" target="_blank" rel="noopener" style="font-size:12px">フォームを開く</a>
+      <span id="feedbackStatus" class="hint"></span>
+    </div>
+  </div>
 </aside>
 
 <main id="mainPane">
@@ -442,6 +453,10 @@
 
 <script>
 "use strict";
+const APP_BUILD = "2026-08-19";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
+/* 報告・要望の送り先（Google フォーム）。form が空なら欄そのものを出さない。
+   entries は フォームの各設問の entry.xxxx（viewform の HTML から拾う）。送るのは 本文・APP_BUILD・ブラウザ名 の3つだけ */
+const FEEDBACK = { form: "https://docs.google.com/forms/d/e/1FAIpQLSfTP942oJysditNOCsHMGnQEP84iVfqjVZtzik2yx9Vj859aA", entries: { message: "entry.1813748369", build: "entry.1186825091", browser: "entry.1335203625" } };
 function parseXdts(text) {
   const body = text.replace(/^exchangeDigitalTimeSheet Save Data\r?\n/, "");
   const doc = JSON.parse(body);
@@ -3148,6 +3163,38 @@ function openSlackPopup(anchorEl) {
   refresh();
   popupOnClose = () => { if (changed) { state.undo.push(snapshot); state.redo = []; markDirty(); } renderTools(); };
 }
+
+/* ========= 報告・要望: 画面内の欄から Google フォームへ（本文・ビルド・ブラウザ名だけ。ファイルの中身は送らない） ========= */
+function browserLabel() {
+  const ua = navigator.userAgent || "";
+  const os = /iPad|Macintosh.*Mobile/.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua)) ? "iPadOS" : /iPhone/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Macintosh/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "?";
+  const b = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /Firefox\//.test(ua) ? "Firefox" : "?";
+  const v = (ua.match(/(?:Edg|OPR|Chrome|Firefox|Version)\/(\d+)/) || [])[1] || "";
+  return b + (v ? " " + v : "") + " / " + os + (window.showSaveFilePicker ? "" : " (保存はダウンロード)") + (navigator.maxTouchPoints > 1 ? " touch" : "");
+}
+function setupFeedback() {
+  const panel = $("feedbackPanel"); if (!panel) return;
+  if (!FEEDBACK.form || !FEEDBACK.entries.message) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const ta = $("feedbackText"), st = $("feedbackStatus"), link = $("feedbackFormLink");
+  link.href = FEEDBACK.form + "/viewform";
+  $("feedbackSend").addEventListener("click", async () => {
+    const msg = ta.value.trim();
+    if (!msg) { st.textContent = "先に文を書いてください"; return; }
+    st.textContent = "送っています…";
+    const fd = new FormData();
+    fd.append(FEEDBACK.entries.message, msg);
+    if (FEEDBACK.entries.build) fd.append(FEEDBACK.entries.build, "VDTS Editor " + APP_BUILD);
+    if (FEEDBACK.entries.browser) fd.append(FEEDBACK.entries.browser, browserLabel());
+    try {
+      await fetch(FEEDBACK.form + "/formResponse", { method: "POST", mode: "no-cors", body: fd });   // 結果は読めない（no-cors）。届いたものとみなす
+      ta.value = ""; st.textContent = "送りました。ありがとうございます";
+    } catch (e) {
+      st.textContent = "送れませんでした。「フォームを開く」から送ってください";
+    }
+  });
+}
+setupFeedback();
 
 /* ========= 上書き保存（受け渡し）: 誰が・どの役で・ひとこと。保存のたびに版が1つ重なる ========= */
 
