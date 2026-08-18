@@ -21,7 +21,7 @@
     " modelFromParsed, modelFingerprint, sheetFingerprint, writeXdts, sha256Hex," +
     " setLabelAt, toggleTickAt, moveChangePoint, isChangePoint, setDuration, ttFromModel," +
     " newDoc, commitDoc, diffSheets, diffIsEmpty, writeVdts, parseVdts, writeTdts, parseAnyTimesheet, EMPTY, TICK," +
-    " docFingerprint, framesToBlocks, parseAuxBlocks, dougaFromGenga, setBlockEnd, setBlockStart, moveBlock, freeSpanAt, parseCameraText, cameraDisplayText, encodeSpeaker, decodeSpeaker, cameraFromTdtsValue, insertFrames, deleteFrames, layersToText, textToLayers, dialogueToText, textToDialogue, cameraToText, textToCamera, splitDtsEpisode, joinDtsEpisode, setSlack, setSlackHead, totalFrames, displayKoma, fmtEpisode, fmtCut, shiftInk };")();
+    " docFingerprint, framesToBlocks, parseAuxBlocks, dougaFromGenga, setBlockEnd, setBlockStart, moveBlock, freeSpanAt, parseCameraText, cameraDisplayText, encodeSpeaker, decodeSpeaker, cameraFromTdtsValue, insertFrames, deleteFrames, layersToText, textToLayers, dialogueToText, textToDialogue, cameraToText, textToCamera, splitDtsEpisode, joinDtsEpisode, setSlack, setSlackHead, totalFrames, displayKoma, fmtEpisode, fmtCut, cutKey, shiftInk };")();
 
 
   // --- SHA-256 既知ベクタ ---
@@ -185,6 +185,10 @@
   out("\n=== 東映カメラコード・尺編集・テキスト記法 ===");
   const gtd = api.parseAuxBlocks(read("samples/sample_01_001.tdts"));
   check("tdts のカメラ欄が読める", gtd.camera.length === 1 && gtd.camera[0].kind === "PAN");
+  check("カット同一性: 番号のゼロ埋め差は同じ、カット・話数が変われば別（保存先が変わる鍵）",
+    api.cutKey({ cut: { title: "abc", episode: "7", scene: "", cut: "8" } }) === api.cutKey({ cut: { title: "abc ", episode: "07", scene: "", cut: "008" } })
+    && api.cutKey({ cut: { title: "abc", episode: "17", scene: "", cut: "178" } }) !== api.cutKey({ cut: { title: "abc", episode: "17", scene: "", cut: "179" } })
+    && api.cutKey({ cut: { title: "abc", episode: "17", scene: "", cut: "178" } }) !== api.cutKey({ cut: { title: "abc", episode: "18", scene: "", cut: "178" } }));
   check("表記: 話数 00・カット 000（数字だけゼロ埋め）", api.fmtEpisode("7") === "07" && api.fmtEpisode("17") === "17" && api.fmtCut("8") === "008" && api.fmtCut("178") === "178" && api.fmtCut("A12") === "A12" && api.joinDtsEpisode({ title: "abc", episode: "7" }) === "abc#07");
   check("DTS 話数欄 abc#17 → 作品名 abc・話数 17", JSON.stringify(api.splitDtsEpisode("abc#17")) === JSON.stringify({ title: "abc", episode: "17" }) && api.joinDtsEpisode({ title: "abc", episode: "17" }) === "abc#17" && api.splitDtsEpisode("17").episode === "17");
   check("未知のコードは数字のまま", api.cameraFromTdtsValue("7").text === "7" && api.cameraFromTdtsValue("7").kind === "");

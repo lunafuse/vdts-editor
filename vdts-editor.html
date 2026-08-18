@@ -429,6 +429,7 @@
       <li>コマ番号をタップ — 朱を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
       <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／朱／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
       <li>上書き保存 — 名前・役・ひとことを付けて版を1つ重ねる。版 N — 過去の版を表示する</li>
+      <li>作品名・話数・シーン・カットを書き換えると、ボタンは「新規保存」になり、元のファイルには上書きせず新しい .vdts に保存する（元のファイルはそのまま）</li>
       <li>テキストで一括入力 — 台詞・カメラを行単位で書く（書式の例は欄の上）</li>
       <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・朱・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
     </ul>
@@ -1285,6 +1286,11 @@ function pageCount(duration) { return Math.max(1, Math.ceil((Number(duration) ||
 function fmtEpisode(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(2, "0") : t; }
 function fmtCut(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(3, "0") : t; }
 function fmtScene(v) { const t = String(v == null ? "" : v).trim(); return /^\d+$/.test(t) ? t.padStart(2, "0") : t; }
+/* カットの同一性: 作品名・話数・シーン・カット（数字のゼロ埋め差は吸収: 8 = 008）。保存先を決める鍵 */
+function cutKey(doc) {
+  const t = v => String(v == null ? "" : v).trim();
+  return [t(doc.cut.title), fmtEpisode(doc.cut.episode), fmtScene(doc.cut.scene), fmtCut(doc.cut.cut)].join(" / ");
+}
 function splitDtsEpisode(str) {
   const raw = String(str || "").trim();
   const m = raw.match(/^(.*?)\s*#\s*(\S.*)$/);
@@ -1482,7 +1488,7 @@ $("newBtn").addEventListener("click", async () => {
   detachTextPanel(); closeInlineEditor({ silent: true }); closePopups();
   state.undo = []; state.redo = []; state.dirty = true; state.viewVersion = null; state.sheetDom = null;
   state.doc = doc;
-  state.src = { path: name, basename: name, kind: "vdts", handle: null, mtime: rec.mtime, originalName: name, originalHandle: null, originalKind: "vdts" };
+  state.src = { path: name, basename: name, kind: "vdts", handle: null, mtime: rec.mtime, originalName: name, originalHandle: null, originalKind: "vdts", cutKey: null };
   state.selectedPath = name;
   render();
 });
@@ -1715,7 +1721,7 @@ function loadDocFromRec(path, rec) {
     commitDoc(doc, { who: "", role: "", note: "取り込み: " + basename });
   }
   state.doc = doc;
-  state.src = { path, basename, kind: rec.kind, handle: rec.handle, mtime: rec.mtime, originalName: basename, originalHandle: rec.handle, originalKind: rec.kind };
+  state.src = { path, basename, kind: rec.kind, handle: rec.handle, mtime: rec.mtime, originalName: basename, originalHandle: rec.handle, originalKind: rec.kind, cutKey: cutKey(doc) };
   const last = doc.history[doc.history.length - 1];
   if (last && last.who && !state.session.who) state.session.who = last.who;
   if (last && last.role && !state.session.role) state.session.role = last.role;
@@ -1947,6 +1953,7 @@ function openHeadFieldEditor(key, el) {
     closeInlineEditor({ silent: true });
     if (ed.changed) { markDirty(); }
     renderHeadOnly(); renderList(results());
+    if (ed.changed && key !== "memo" && key !== "author") renderTools(); // カットが変わったら保存ボタンが「新規保存」に変わる
   }
 }
 
@@ -1954,7 +1961,7 @@ function renderTools() {
   const box = $("toolsBox"); if (!box || !state.doc) return;
   const D = state.doc.sheet.duration;
   box.innerHTML = `<div class="tools">
-    <button id="tSave" title="版を1つ重ねて .vdts へ上書き保存（初回だけ保存先を聞く）">上書き保存${state.src && state.src.kind === "vdts" ? "" : "（.vdts を作る）"}</button>
+    <button id="tSave" title="${cutChangedSinceOpen() ? "作品名・話数・シーン・カットが開いたときから変わっているので、元のファイルには上書きせず、版を1つ重ねて新しい .vdts に保存する（保存先を聞く）" : "版を1つ重ねて .vdts へ上書き保存（初回だけ保存先を聞く）"}">${saveVerb()}${state.src && state.src.kind === "vdts" ? "" : "（.vdts を作る）"}</button>
     <button class="ghost" id="tXdts" title="CSP 等へ渡す">xdts 書き出し</button>
     <button class="ghost" id="tTdts" title="東映DTS へ渡す">tdts 書き出し</button>
     <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・朱・動画欄はそのまま）">取り込み</button>
@@ -3133,11 +3140,11 @@ function openCommitPopup(opts) {
   const o = opts || {};
   const anchor = $("tSave") ? $("tSave").getBoundingClientRect() : { left: 100, right: 200, top: 100 };
   const el = showPopup(`
-    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${o.onlyIdentity ? "いま作業している人" : "上書き保存 — 版 " + (doc.history.length + 1) + " として"}</div>
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${o.onlyIdentity ? "いま作業している人" : saveVerb() + " — 版 " + (doc.history.length + 1) + " として" + (cutChangedSinceOpen() ? "、新しい .vdts に（" + esc(defaultStem(doc, state.src.basename)) + ".vdts）。元の " + esc(state.src.basename) + " はそのまま" : "")}</div>
     <div id="cpRoles">${VDTS_ROLES.map(r => `<span class="chip" data-role="${r}" style="${CHIP_CSS}${r === state.session.role ? CHIP_ON : ""}">${r}</span>`).join("")}</div>
     <input id="cpWho" placeholder="名前" value="${esc(state.session.who)}" style="margin-top:6px;width:100%;font:inherit;font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:6px 8px">
     ${o.onlyIdentity ? "" : `<textarea id="cpNote" placeholder="ひとこと（任意）" style="margin-top:6px;min-height:48px;font-family:inherit"></textarea>`}
-    <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end"><button type="button" class="ghost" id="cpCancel">やめる</button><button type="button" id="cpOk">${o.onlyIdentity ? "これで" : "上書き保存"}</button></div>
+    <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end"><button type="button" class="ghost" id="cpCancel">やめる</button><button type="button" id="cpOk">${o.onlyIdentity ? "これで" : saveVerb()}</button></div>
   `, anchor);
   el.querySelectorAll("#cpRoles .chip").forEach(c => c.addEventListener("click", () => {
     state.session.role = c.dataset.role;
@@ -3166,6 +3173,14 @@ async function ensureWritable(handle) {
 /* 元ファイルの手がかり（開いたときの FileSystemFileHandle）。保存ダイアログを同じフォルダから開くのに使う */
 function startInHandle() { return state.src && state.src.handle && state.src.handle.kind === "file" ? state.src.handle : undefined; }
 
+/* 開いた（保存した）ときのカット同一性 state.src.cutKey と今の cutKey(doc) を比べる。
+   変わっていたら元のファイルには上書きせず新しい .vdts として保存する（別カットのシートで元カットを潰さない） */
+function cutChangedSinceOpen() {
+  return !!(state.doc && state.src && state.src.kind === "vdts" && state.src.cutKey != null && cutKey(state.doc) !== state.src.cutKey);
+}
+/* 保存ボタン・保存ポップアップの語: 上書き保存 か 新規保存 か */
+function saveVerb() { return cutChangedSinceOpen() ? "新規保存" : "上書き保存"; }
+
 /* 既定のファイル名: 作品名_話数_カット（シーンがあれば 作品名_話数_シーン_カット）。空の項は飛ばし、全部空なら元の名前 */
 function defaultStem(doc, fallback) {
   const clean = v => String(v == null ? "" : v).trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "");
@@ -3176,17 +3191,22 @@ function defaultStem(doc, fallback) {
 async function saveVdts(note, opts) {
   const doc = state.doc; if (!doc || !state.src) return;
   const o = opts || {};
+  // カット（作品名・話数・シーン・カット）が開いたときから変わっていたら、元のファイルには上書きしない → 新しい .vdts として保存
+  const asNew = cutChangedSinceOpen();
+  const verb = asNew ? "新規保存" : "上書き保存";
   // 「上書き保存」は必ず1版重ねる（内容が同じでも「この人が確認して渡した」事実が版として残る）。
   // 版を戻したときは restoreVersion 側で既に重ねてあるので、ここでは重ねない
-  const stacked = o.noStack ? false : commitDoc(doc, { who: state.session.who, role: state.session.role, note, force: true });
+  const commitNote = asNew ? (note ? note + " ／ " : "") + "新規保存（元: " + state.src.basename + "）" : note;
+  const stacked = o.noStack ? false : commitDoc(doc, { who: state.session.who, role: state.session.role, note: commitNote, force: true });
   const text = writeVdts(doc);
   const stem = defaultStem(doc, state.src.basename);
   const filename = stem + ".vdts";
   try {
     let handle = null;
     // 開いているのが .vdts ならそのファイルへ上書き（初回だけ書き込み許可を聞かれる）。
-    // .xdts/.tdts を開いていたら初回は保存ダイアログ（元ファイルと同じフォルダから開く）、以後はその .vdts へ上書き
-    if (state.src.kind === "vdts" && await ensureWritable(state.src.handle)) handle = state.src.handle;
+    // .xdts/.tdts を開いていたら初回は保存ダイアログ（元ファイルと同じフォルダから開く）、以後はその .vdts へ上書き。
+    // カットが変わっていたら（asNew）必ず保存ダイアログ＝新しいファイル
+    if (!asNew && state.src.kind === "vdts" && await ensureWritable(state.src.handle)) handle = state.src.handle;
     else if (window.showSaveFilePicker) {
       const opt = { suggestedName: filename, types: [{ description: "VDTS", accept: { "application/octet-stream": [".vdts"] } }] };
       const si = startInHandle(); if (si) opt.startIn = si;
@@ -3195,20 +3215,21 @@ async function saveVdts(note, opts) {
     if (handle) {
       const w = await handle.createWritable(); await w.write(text); await w.close();
       const f = await handle.getFile();
-      // 保存したファイルをこの文書の正本として登録（元の xdts/tdts の項目は置き換える）
+      // 保存したファイルをこの文書の正本として登録（元の xdts/tdts の項目は置き換える。新規保存のときは元の .vdts の項目を残す＝元のファイルは触っていない）
       const path = filename;
-      if (state.src.path !== path) state.files.delete(state.src.path);
+      if (state.src.path !== path && !asNew) state.files.delete(state.src.path);
       let rec = state.files.get(path);
       if (!rec) { rec = { handle, mtime: f.lastModified, kind: "vdts", result: null }; state.files.set(path, rec); }
       rec.handle = handle; rec.mtime = f.lastModified; rec.kind = "vdts";
       inspectText(path, rec, text, f.lastModified);
-      state.src = { path, basename: filename, kind: "vdts", handle, mtime: f.lastModified, originalName: state.src.originalName, originalHandle: state.src.originalHandle, originalKind: state.src.originalKind };
+      state.src = { path, basename: filename, kind: "vdts", handle, mtime: f.lastModified, originalName: state.src.originalName, originalHandle: state.src.originalHandle, originalKind: state.src.originalKind, cutKey: cutKey(doc) };
       state.selectedPath = path;
     } else {
       downloadText(text, filename);
+      state.src.cutKey = cutKey(doc); if (asNew) state.src.basename = filename;
     }
     state.dirty = false; state.extChanged = false;
-    setStatus(false, ((stacked || o.noStack) ? "版 " + doc.history.length + " として上書き保存: " : "保存: ") + filename);
+    setStatus(false, ((stacked || o.noStack) ? "版 " + doc.history.length + " として" + verb + ": " : "保存: ") + filename);
     render();
   } catch (e) {
     if (e.name === "AbortError") { if (stacked) doc.history.pop(); return; }
