@@ -1,6 +1,6 @@
 # The VDTS format v0.1 (versioned Digital Time Sheet)
 
-VDTS is a **master** format for animation timesheets. One file holds the current state, every hand-off as a version (history), correction notes (朱 — "red pencil"), handwritten strokes, and the original files it was imported from. XDTS / TDTS are derived exports.
+VDTS is a **master** format for animation timesheets. One file holds the current state, every hand-off as a version (history), correction notes and hand-over notes, handwritten strokes, and the original files it was imported from. XDTS / TDTS are derived exports.
 
 ## File
 

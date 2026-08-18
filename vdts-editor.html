@@ -228,6 +228,7 @@
   .ext-banner button { background: var(--shu); }
   #bannerBox { position: sticky; top: 0; z-index: 6; }
   .ext-banner.browse { background: #eef4f8; border-color: var(--blue); color: var(--ink); }
+  #sheetBox.browsing table.sheet { background: #eef4f8; outline: 2px solid var(--blue); outline-offset: -1px; }   /* 版の閲覧中: 紙が青みがかる（今のシートではない） */
   .ext-banner.browse button { background: var(--blue); }
   .ext-banner.browse button.ghost { background: transparent; color: var(--ink); border-color: var(--ink); }
   .ext-banner.browse button.icon { min-width: 36px; padding: 4px 8px; }
@@ -426,12 +427,11 @@
       <li>尺編集 — 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす</li>
       <li>余尺 — 頭と尻にコマを足す。足した行は薄いグレー。尺の表示は総尺</li>
       <li>動画欄を更新 — 原画の番号と中割から動画番号を振り直す。動画欄のマスは原画欄と同じ操作で直せる</li>
-      <li>コマ番号をタップ — 朱を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
-      <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／朱／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
+      <li>コマ番号をタップ — 修正指示・申し送り・要確認を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
+      <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／赤／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
       <li>上書き保存 — 名前・役・ひとことを付けて版を1つ重ねる。版 N — 過去の版を表示する</li>
       <li>作品名・話数・シーン・カットを書き換えると、ボタンは「新規保存」になり、元のファイルには上書きせず新しい .vdts に保存する（元のファイルはそのまま）</li>
-      <li>テキストで一括入力 — 台詞・カメラを行単位で書く（書式の例は欄の上）</li>
-      <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・朱・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
+      <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・指示・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
     </ul>
   </div>
 </aside>
@@ -1551,7 +1551,7 @@ async function importIntoCurrent(file) {
   commitDoc(doc, { who: state.session.who, role: state.session.role, note: "取り込み: " + file.name, force: true });
   state.viewVersion = null; state.sheetDom = null;
   markDirty(); renderMain();
-  setStatus(false, `取り込み: ${file.name} を原画欄に差し替え、版 ${doc.history.length} を重ねた（履歴・朱・動画欄はそのまま）`);
+  setStatus(false, `取り込み: ${file.name} を原画欄に差し替え、版 ${doc.history.length} を重ねた（履歴・指示・動画欄はそのまま）`);
   return true;
 }
 
@@ -1668,7 +1668,7 @@ function notifyNg(result) {
 
 /* ========= 旧サイドカー（.memo.json）は読み取りのみ。朱として文書へ取り込む ========= */
 const MEMO_KINDS = {
-  shusei: { label: "修正", cls: "mk-shusei" },
+  shusei: { label: "修正指示", cls: "mk-shusei" },
   moushiokuri: { label: "申し送り", cls: "mk-moushiokuri" },
   kakunin: { label: "要確認", cls: "mk-kakunin" },
 };
@@ -1900,7 +1900,7 @@ function renderHeadOnly() {
     state.memoCanvas = c;
     // 道具（欄の右上）
     const tools = document.createElement("div"); tools.className = "ink-tools";
-    tools.innerHTML = ["black", "shu", "blue", "green"].map(k => `<button class="swatch${state.ink.color === k && !state.ink.eraser ? " on" : ""}" data-ink-color="${k}" style="background:${INK_COLORS[k]}" title="${k === "black" ? "黒" : k === "shu" ? "朱" : k === "blue" ? "青" : "緑"}"></button>`).join("")
+    tools.innerHTML = ["black", "shu", "blue", "green"].map(k => `<button class="swatch${state.ink.color === k && !state.ink.eraser ? " on" : ""}" data-ink-color="${k}" style="background:${INK_COLORS[k]}" title="${k === "black" ? "黒" : k === "shu" ? "赤" : k === "blue" ? "青" : "緑"}"></button>`).join("")
       + `<button class="ghost w${state.ink.width === "thin" ? " on" : ""}" data-ink-width="thin">細</button><button class="ghost w${state.ink.width === "thick" ? " on" : ""}" data-ink-width="thick">太</button><button class="ghost w${state.ink.eraser ? " on" : ""}" data-ink-eraser="1" title="なぞった線を消す">消</button>`;
     tools.addEventListener("pointerdown", ev => ev.stopPropagation());
     tools.querySelectorAll("[data-ink-color]").forEach(b => b.addEventListener("click", () => { state.ink.color = b.dataset.inkColor; state.ink.eraser = false; renderHeadOnly(); }));
@@ -1964,7 +1964,7 @@ function renderTools() {
     <button id="tSave" title="${cutChangedSinceOpen() ? "作品名・話数・シーン・カットが開いたときから変わっているので、元のファイルには上書きせず、版を1つ重ねて新しい .vdts に保存する（保存先を聞く）" : "版を1つ重ねて .vdts へ上書き保存（初回だけ保存先を聞く）"}">${saveVerb()}${state.src && state.src.kind === "vdts" ? "" : "（.vdts を作る）"}</button>
     <button class="ghost" id="tXdts" title="CSP 等へ渡す">xdts 書き出し</button>
     <button class="ghost" id="tTdts" title="東映DTS へ渡す">tdts 書き出し</button>
-    <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・朱・動画欄はそのまま）">取り込み</button>
+    <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・指示・動画欄はそのまま）">取り込み</button>
     <span class="sep"></span>
     <button class="ghost icon" id="tUndo" title="元に戻す" ${state.undo.length ? "" : "disabled"}>↶</button>
     <button class="ghost icon" id="tRedo" title="やり直す" ${state.redo.length ? "" : "disabled"}>↷</button>
@@ -1987,7 +1987,7 @@ function renderTools() {
       file = await new Promise(resolve => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xdts,.tdts"; inp.addEventListener("change", () => resolve(inp.files[0] || null)); inp.click(); });
       if (!file) return;
     }
-    if (!window.confirm(`「${file.name}」の内容で今のシートの原画欄を差し替えます（版を1つ重ねます。履歴・朱・動画欄はそのまま。取り消しもできます）`)) return;
+    if (!window.confirm(`「${file.name}」の内容で今のシートの原画欄を差し替えます（版を1つ重ねます。履歴・指示・動画欄はそのまま。取り消しもできます）`)) return;
     await importIntoCurrent(file);
   });
   $("tTdts").addEventListener("click", () => exportDerived("tdts"));
@@ -2032,7 +2032,7 @@ function renderBanner() {
     <button class="ghost icon" id="bPrev" ${idx > 0 ? "" : "disabled"} title="前の版">◀</button>
     <strong>版 ${h.id} / ${N}</strong> <span class="num">${esc(when)}</span> ${esc(h.role || "")} ${esc(h.who || "")} ${h.note ? "「" + esc(h.note) + "」" : ""}
     <button class="ghost icon" id="bNext" ${idx < N - 1 ? "" : "disabled"} title="次の版">▶</button>
-    <span style="color:var(--pencil)">｜ 今との違い: ${esc(summary)}（朱の背景）</span>
+    <span style="color:var(--pencil)">｜ 今との違い: ${esc(summary)}（赤い背景）</span>
     <span style="flex:1"></span>
     <button class="ghost" id="bRestore">この版の内容に戻す</button>
     <button id="bNow">今に戻る</button>
@@ -2041,6 +2041,18 @@ function renderBanner() {
   $("bNext").addEventListener("click", () => browseVersion(idx + 1));
   $("bNow").addEventListener("click", () => browseVersion(null));
   $("bRestore").addEventListener("click", () => restoreVersion(idx));
+}
+/* 版を見ている間にシートを触ったとき: 黙って無視せず、その場に「今に戻る」への出口を出す（「版」ボタンを押しただけで書けなくなったと見える事故を防ぐ） */
+function showBrowseHint(anchorEl) {
+  if (!isBrowsing()) return;
+  const doc = state.doc, h = doc.history[state.viewVersion], N = doc.history.length;
+  const rect = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : { left: 100, right: 140, top: 100, bottom: 120 };
+  const el = showPopup(`
+    <div style="font-size:12px;line-height:1.5;max-width:260px">版 ${h.id} / ${N} を表示中なので書けません。<br>書くには今のシートに戻ってください。</div>
+    <div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end"><button type="button" class="ghost" id="bhStay">見るだけ</button><button type="button" id="bhNow">今に戻る</button></div>
+  `, () => rect);
+  el.querySelector("#bhStay").addEventListener("click", closePopups);
+  el.querySelector("#bhNow").addEventListener("click", () => { closePopups(); browseVersion(null); });
 }
 function browseVersion(idx) {
   closeInlineEditor(); closePopups();
@@ -2072,7 +2084,7 @@ function renderChecks() {
     const cls = c.level === "good" ? "good" : c.level === "bad" ? "bad" : "warn";
     return `<div class="check-row ${cls}"><span class="mark">${mark}</span>${esc(c.text)}</div>`;
   });
-  rows.push(`<div class="check-row ${open ? "bad" : "good"}"><span class="mark">${open ? "✕" : "○"}</span>朱 未解消 ${open} 件（全 ${state.doc.annotations.length} 件）</div>`);
+  rows.push(`<div class="check-row ${open ? "bad" : "good"}"><span class="mark">${open ? "✕" : "○"}</span>修正指示・申し送り 未解消 ${open} 件（全 ${state.doc.annotations.length} 件）</div>`);
   box.innerHTML = `<div class="checks">${rows.join("")}</div>`;
 }
 
@@ -2101,6 +2113,7 @@ function renderSheetDom() {
   if (!d || d.shape.duration !== shape.duration || d.shape.slack !== shape.slack || d.shape.layerCount !== shape.layerCount || d.shape.dougaCount !== shape.dougaCount) {
     buildSheetDom(box, model);
   }
+  box.classList.toggle("browsing", isBrowsing());   // 版を見ている間は紙の色を変えて「今のシートではない」と分かるように
   paintSheet();
 }
 
@@ -2122,7 +2135,7 @@ function buildSheetDom(box, model) {
     cells += `<td class="cell aux" data-kind="s" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="s" data-li="1" data-k="${k}"></td>`;
     if (hasDouga) for (let li = 0; li < model.douga.length; li++) cells += `<td class="cell douga" data-kind="d" data-li="${li}" data-k="${k}"></td>`;
     cells += `<td class="cell aux" data-kind="c" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="c" data-li="1" data-k="${k}"></td>`;
-    rows += `<tr class="${rowCls}"><td class="koma-no" data-k="${k}" title="タップで朱を書く">${dk}</td>${cells}<td class="memo-lane" data-k="${k}"></td></tr>`;
+    rows += `<tr class="${rowCls}"><td class="koma-no" data-k="${k}" title="タップで修正指示・申し送りを書く">${dk}</td>${cells}<td class="memo-lane" data-k="${k}"></td></tr>`;
   }
   const colCount = 1 + model.layers.length + 2 + (hasDouga ? model.douga.length : 0) + 2 + 2;
   box.innerHTML = `<div class="sheet-wrap"><table class="sheet">
@@ -2323,7 +2336,7 @@ function renderBelow() {
     </div>`;
   }).join("");
   box.innerHTML = `<div class="memo-panel">
-    <details class="memo-details" open><summary>朱・申し送り（${doc.annotations.filter(a => a.state !== "済").length} 件 未解消）— コマ番号をタップして書く</summary>${anns || '<div class="empty-note">まだありません</div>'}</details>
+    <details class="memo-details" open><summary>修正指示・申し送り（${doc.annotations.filter(a => a.state !== "済").length} 件 未解消）— コマ番号をタップして書く</summary>${anns || '<div class="empty-note">まだありません</div>'}</details>
   </div>
   <div class="memo-panel">
     <details class="memo-details" ${state.viewVersion !== null ? "open" : ""}><summary>版（履歴 ${doc.history.length}）— 「上書き保存」のたびに1版重なる。戻したときもその内容で1版重なる</summary>${hist}</details>
@@ -2530,8 +2543,9 @@ function onSheetPointerDown(e) {
     e.preventDefault();
     return;
   }
-  if (isBrowsing()) {                         // 版を見ている間は書けない（指のスクロールだけ）
-    if (e.pointerType === "touch") { gest = { id: e.pointerId, type: "touch", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: "scroll", longFired: false, timer: null, td: null, canDrag: false, dragTo: null, suppressClickUntil: 0, kind: "g", li: 0, k: 0 }; try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } }
+  if (isBrowsing()) {                         // 版を見ている間は書けない（指のスクロールだけ）。触ったら「今に戻る」への出口を出す
+    if (e.pointerType === "touch") { gest = { id: e.pointerId, type: "touch", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: "scroll", longFired: false, timer: null, td: td || dh, canDrag: false, dragTo: null, suppressClickUntil: 0, kind: "g", li: 0, k: 0, browseHint: true }; try { $("sheetBox").setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } }
+    else showBrowseHint(td || dh);
     return;
   }
   const base = { id: e.pointerId, type: e.pointerType || "mouse", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, longFired: false, timer: null, td: td || dh, dragTo: null, suppressClickUntil: 0 };
@@ -2632,6 +2646,8 @@ function onSheetPointerUp(e) {
   } else if (g.mode === "tap" && !g.longFired) {
     if (g.kind === "g" || g.kind === "d") handleCellTap(g.kind, g.li, g.k, g.type);
     else handleBlockTap(g.kind, g.li, g.k, g.type);
+  } else if (g.mode === "scroll" && g.browseHint && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) <= MOVE_TOL_TOUCH) {
+    showBrowseHint(g.td);                    // 版を見ている間に指でマスをタップ＝出口を出す
   } else if (g.mode === "drag" && g.blk) {
     if (g.blkSnap && g.blkSnap === JSON.stringify(state.doc.sheet)) state.undo.pop(); else { markDirty(); }
   } else if (g.mode === "drag" && g.dragTo && g.dragTo !== g.k) {
@@ -3028,7 +3044,7 @@ function openAnnotationPopup(k, anchorEl) {
   const layers = doc.sheet.layers.map(L => L.name);
   let sel = { layer: layers[0] || "", kind: "shusei", end: k };
   const el = showPopup(`
-    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">朱を書く — ${k}コマ目から</div>
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">修正指示・申し送りを書く — ${k}コマ目から</div>
     <div id="apLayers">${["全体"].concat(layers).map(n => `<span class="chip" data-layer="${esc(n)}" style="${CHIP_CSS}${(n === "全体" ? "" : n) === sel.layer ? CHIP_ON : ""}">${esc(n)}</span>`).join("")}</div>
     <div id="apKinds" style="margin-top:4px">${Object.entries(MEMO_KINDS).map(([kk, v]) => `<span class="chip" data-kind="${kk}" style="${CHIP_CSS}${kk === sel.kind ? CHIP_ON : ""}">${v.label}</span>`).join("")}</div>
     <div style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:12px">〜 <span id="apEnd" class="num" style="border:1px dashed var(--rule-mid);padding:4px 8px;border-radius:3px">${k}</span>コマ目まで

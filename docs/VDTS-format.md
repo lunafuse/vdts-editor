@@ -1,6 +1,6 @@
 # VDTS 形式 v0.1（versioned Digital Time Sheet）
 
-VDTS はアニメーション用タイムシートの**正本**形式。現在の状態と、受け渡しごとの版（履歴）、朱（修正指示）、手書きの線、受け取った原本を1ファイルに持つ。XDTS / TDTS はここからの派生出力として書き出す。
+VDTS はアニメーション用タイムシートの**正本**形式。現在の状態と、受け渡しごとの版（履歴）、修正指示・申し送り、手書きの線、受け取った原本を1ファイルに持つ。XDTS / TDTS はここからの派生出力として書き出す。
 
 ## ファイル
 
@@ -46,8 +46,8 @@ VDTS はアニメーション用タイムシートの**正本**形式。現在�
 ### `history[]` — 版（追記のみ）
 上書き保存のたびに1件重なる。`sheet` はその時点のスナップショット全体、`fingerprint` は文書指紋（セル欄の正規化指紋＋動画欄＋台詞＋カメラ＋手書き＋上段）。過去の版に戻すときも、その内容で新しい版を重ねる（履歴は消えない）。
 
-### `annotations[]` — 朱
-`kind` は `shusei`（修正）/ `moushiokuri`（申し送り）/ `kakunin`（要確認）。`anchor` は**レイヤー名＋コマ範囲**（トラック番号は使わない。他ツールが再構築しても追える）。`madeAgainst` はどの版に対する朱か、`resolvedIn` はどの版で解消したか、`state` は `要` / `済`。
+### `annotations[]` — 修正指示・申し送り
+`kind` は `shusei`（修正指示）/ `moushiokuri`（申し送り）/ `kakunin`（要確認）。`anchor` は**レイヤー名＋コマ範囲**（トラック番号は使わない。他ツールが再構築しても追える）。`madeAgainst` はどの版に対して書いたか、`resolvedIn` はどの版で解消したか、`state` は `要` / `済`。
 
 ### `extensions`
 受け取った原本の生テキスト（`xdts` / `toei`(tdts)）。捨てない。
@@ -58,4 +58,4 @@ VDTS はアニメーション用タイムシートの**正本**形式。現在�
 ## XDTS / TDTS への写像
 - XDTS: CLIP STUDIO が吐く version 5 の最小構造（`header` / `timeTables` / `version`）。`duration` は総尺、フレームは0始まりの変化点、空は `SYMBOL_NULL_CELL`。台詞・カメラは fieldId 3 / 5 に TDTS と同じ形で書く（開始コマに値、続くコマは `SYMBOL_HYPHEN`）
 - TDTS: 東映 DTS の version 7 の形。`timeSheets[]` で包み、`header.episode` は `略称#話数`（`title` + `#` + `episode`）、`operatorName` に `author`、`direction` に `memo`。履歴を `sheet2, sheet3…` として並べる選択肢あり
-- 手書きの線・朱・履歴は XDTS / TDTS に語彙が無いので出さない
+- 手書きの線・修正指示・履歴は XDTS / TDTS に語彙が無いので出さない
