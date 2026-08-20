@@ -423,7 +423,7 @@
       <li>長押し（右クリック） — そのコマから新しい番号を書く</li>
       <li>数字や×を上下にドラッグ — 変化点を動かす（指の場合は長押ししてからドラッグ）</li>
       <li>台詞・カメラの空きをタップ — ブロックを置いて書く。端をドラッグすると伸縮、真ん中をドラッグすると移動</li>
-      <li>列名をタップ — 改名。長押し（右クリック）— その左に列を挿入（A下 など。名前はその場で書き直せる）。＋ — 右端に列を追加</li>
+      <li>列名をタップ — 改名。長押し（右クリック）— 隣に列を挿入（A下は左・A上は右。名前はその場で書き直せる）。＋ — 右端に列を追加</li>
       <li>尺 — 上段の尺をタップして書き換えるか、シート末尾の ⇕ を上下にドラッグする。赤線が尺の終わり</li>
       <li>尺編集 — 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす</li>
       <li>余尺 — 頭と尻にコマを足す。足した行は薄いグレー。尺の表示は総尺</li>
@@ -2515,7 +2515,7 @@ function bindSheetGestures() {
   box.addEventListener("pointercancel", onSheetPointerCancel);
   box.addEventListener("contextmenu", e => {
     const lh = e.target.closest("th.layer-name");
-    if (lh && lh.dataset.kind === "g" && !state.cutMode && !isBrowsing()) { e.preventDefault(); insertLayerBelow(Number(lh.dataset.li)); return; }
+    if (lh && lh.dataset.kind === "g" && !state.cutMode && !isBrowsing()) { e.preventDefault(); openInsertLayerPopup(Number(lh.dataset.li), lh); return; }
     const td = e.target.closest("td.cell");
     if (td && (td.dataset.kind === "g" || td.dataset.kind === "d") && !state.cutMode) { e.preventDefault(); openCellEditor(td.dataset.kind, Number(td.dataset.li), Number(td.dataset.k), "", "mouse"); }
   });
@@ -2558,7 +2558,7 @@ function onSheetPointerDown(e) {
         if (!gest || gest.id !== e.pointerId || gest.mode !== "tap") return;
         gest.longFired = true; gest.mode = "done";
         if (navigator.vibrate) navigator.vibrate(8);
-        insertLayerBelow(li);
+        openInsertLayerPopup(li, lh);
       }, LONG_PRESS_MS);
     }
     return;
@@ -3032,18 +3032,32 @@ function addLayer() {
   markDirty(); renderMain();
 }
 
-/* 列名を長押し（右クリック）→ その左に空の列を挿入（下のセルは左に書く紙の慣習）。A の左に A下 を置く用。名前は 元の列名+下（使用済みなら次の空き文字）で、その場で書き直せる */
-function insertLayerBelow(li) {
+/* 列名を長押し（右クリック）→ 下／上を選んで隣に空の列を挿入。紙の慣習で 下のセルは左・上のセルは右。
+   名前は 元の列名+下／上（使用済みなら次の空き文字）が全選択で入るので、その場で書き直せる */
+function insertLayerNextTo(li, side) {
   const doc = state.doc; if (!doc) return;
   pushUndo();
   const base = doc.sheet.layers[li] ? doc.sheet.layers[li].name : "";
   const used = new Set(doc.sheet.layers.map(L => L.name));
-  const name = base && !used.has(base + "下") ? base + "下" : nextLayerName(doc.sheet);
-  doc.sheet.layers.splice(li, 0, { name, cells: new Array(totalFrames(doc.sheet)).fill(EMPTY) });
+  const suffix = side === "ue" ? "上" : "下";
+  const name = base && !used.has(base + suffix) ? base + suffix : nextLayerName(doc.sheet);
+  const at = side === "ue" ? li + 1 : li;
+  doc.sheet.layers.splice(at, 0, { name, cells: new Array(totalFrames(doc.sheet)).fill(EMPTY) });
   state.sheetDom = null;
   markDirty(); renderMain();
-  const th = document.querySelector('th.layer-name[data-kind="g"][data-li="' + li + '"]');
-  if (th) openLayerNameEditor(th, li);
+  const th = document.querySelector('th.layer-name[data-kind="g"][data-li="' + at + '"]');
+  if (th) openLayerNameEditor(th, at);
+}
+function openInsertLayerPopup(li, anchorEl) {
+  const doc = state.doc; if (!doc || !doc.sheet.layers[li]) return;
+  const base = doc.sheet.layers[li].name;
+  const rect = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : { left: 100, right: 140, top: 100, bottom: 120 };
+  const el = showPopup(`
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${esc(base)} の隣に列を挿入</div>
+    <div style="display:flex;gap:6px"><button type="button" class="ghost" id="ilShita">← ${esc(base)}下（左）</button><button type="button" class="ghost" id="ilUe">${esc(base)}上（右） →</button></div>
+  `, () => rect);
+  el.querySelector("#ilShita").addEventListener("click", () => { closePopups(); insertLayerNextTo(li, "shita"); });
+  el.querySelector("#ilUe").addEventListener("click", () => { closePopups(); insertLayerNextTo(li, "ue"); });
 }
 
 /* ========= 朱を書く（コマ番号をタップ → その行に。列と種類はチップで、文はペン／Scribble） ========= */
