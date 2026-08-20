@@ -416,6 +416,7 @@
   <div class="panel">
     <div class="panel-title">使い方</div>
     <ul class="howto">
+      <li>VDTS は、バージョン管理を組み込んだ XDTS。保存のたびに版が重なり、いつでも遡れる。XDTS / TDTS はそこから書き出す</li>
       <li>数字のマスをタップ — その場で書き直す。打った文字は即反映。別の所を触ると閉じる。Esc で元に戻す</li>
       <li>原画と原画の間の線をタップ — 中割 ○ を付ける／外す</li>
       <li>×の途中、または最後の原画より後をタップ — そのコマから新しい番号を書く</li>
@@ -453,7 +454,7 @@
 
 <script>
 "use strict";
-const APP_BUILD = "2026-08-19";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
+const APP_BUILD = "2026-08-20";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
 /* 報告・要望の送り先（Google フォーム）。form が空なら欄そのものを出さない。
    entries は フォームの各設問の entry.xxxx（viewform の HTML から拾う）。送るのは 本文・APP_BUILD・ブラウザ名 の3つだけ */
 const FEEDBACK = { form: "https://docs.google.com/forms/d/e/1FAIpQLSfTP942oJysditNOCsHMGnQEP84iVfqjVZtzik2yx9Vj859aA", entries: { message: "entry.1813748369", build: "entry.1186825091", browser: "entry.1335203625" } };
