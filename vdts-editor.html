@@ -1890,7 +1890,7 @@ function renderHeadOnly() {
   box.innerHTML = `<div class="sheet-head">
     <div class="paper-head">
       <div class="ph-cell"><div class="ph-label">話数</div><div class="ph-value num${doc.cut.episode ? "" : " ph-empty"}" data-head="episode" title="タップして書く">${esc(doc.cut.episode ? fmtEpisode(doc.cut.episode) : "—")}</div></div>
-      ${f("title", "作品名（DTSでは 略称#話数 の略称）", "作品名", "ph-title")}
+      ${f("title", "作品名", "作品名", "ph-title")}
       <div class="ph-cell"><div class="ph-label">シーン</div><div class="ph-value num${doc.cut.scene ? "" : " ph-empty"}" data-head="scene" title="タップして書く">${esc(doc.cut.scene ? fmtScene(doc.cut.scene) : "—")}</div></div>
       <div class="ph-cell ph-cut"><div class="ph-label">カット</div><div class="ph-value num${doc.cut.cut ? "" : " ph-empty"}" data-head="cut" title="タップして書く">${esc(doc.cut.cut ? fmtCut(doc.cut.cut) : "000")}</div></div>
       <div class="ph-cell"><div class="ph-label">尺</div><div class="ph-value num" data-head="duration" title="タップして本尺を変える${(doc.sheet.slackHead || doc.sheet.slack) ? "（総尺 ＝ 本尺 ＋ 頭の余尺 ＋ 尻の余尺）" : ""}">${(doc.sheet.slackHead || doc.sheet.slack) ? `${komaToShaku(totalFrames(doc.sheet))} <span class="ph-sub">(${totalFrames(doc.sheet)}) ＝ ${komaToShaku(D)} ＋ ${doc.sheet.slackHead || 0} ＋ ${doc.sheet.slack || 0}</span>` : `${komaToShaku(D)} <span class="ph-sub">(${D})</span>`}</div></div>
