@@ -423,7 +423,7 @@
       <li>長押し（右クリック） — そのコマから新しい番号を書く</li>
       <li>数字や×を上下にドラッグ — 変化点を動かす（指の場合は長押ししてからドラッグ）</li>
       <li>台詞・カメラの空きをタップ — ブロックを置いて書く。端をドラッグすると伸縮、真ん中をドラッグすると移動</li>
-      <li>列名をタップ — 改名。＋ — 列を追加</li>
+      <li>列名をタップ — 改名。長押し（右クリック）— その左に列を挿入（A下 など。名前はその場で書き直せる）。＋ — 右端に列を追加</li>
       <li>尺 — 上段の尺をタップして書き換えるか、シート末尾の ⇕ を上下にドラッグする。赤線が尺の終わり</li>
       <li>尺編集 — 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす</li>
       <li>余尺 — 頭と尻にコマを足す。足した行は薄いグレー。尺の表示は総尺</li>
@@ -2514,6 +2514,8 @@ function bindSheetGestures() {
   box.addEventListener("pointerup", onSheetPointerUp);
   box.addEventListener("pointercancel", onSheetPointerCancel);
   box.addEventListener("contextmenu", e => {
+    const lh = e.target.closest("th.layer-name");
+    if (lh && lh.dataset.kind === "g" && !state.cutMode && !isBrowsing()) { e.preventDefault(); insertLayerBelow(Number(lh.dataset.li)); return; }
     const td = e.target.closest("td.cell");
     if (td && (td.dataset.kind === "g" || td.dataset.kind === "d") && !state.cutMode) { e.preventDefault(); openCellEditor(td.dataset.kind, Number(td.dataset.li), Number(td.dataset.k), "", "mouse"); }
   });
@@ -2546,6 +2548,21 @@ function rowAtY(startK, y0, y) {
 function onSheetPointerDown(e) {
   if (!state.doc) return;
   if (e.button !== undefined && e.button !== 0) return;
+  const lh = e.target.closest("th.layer-name");
+  if (lh && lh.dataset.kind === "g" && !isBrowsing() && !state.cutMode) {
+    // 列名: タップ＝改名（click ハンドラ）、長押し＝その右に列を挿入
+    const li = Number(lh.dataset.li);
+    gest = { id: e.pointerId, type: e.pointerType || "mouse", x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, mode: "tap", kind: "lh", li, k: 0, td: null, canDrag: false, dragTo: null, longFired: false, timer: null, suppressClickUntil: 0 };
+    if (gest.type !== "mouse") {
+      gest.timer = setTimeout(() => {
+        if (!gest || gest.id !== e.pointerId || gest.mode !== "tap") return;
+        gest.longFired = true; gest.mode = "done";
+        if (navigator.vibrate) navigator.vibrate(8);
+        insertLayerBelow(li);
+      }, LONG_PRESS_MS);
+    }
+    return;
+  }
   const dh = e.target.closest("td.dur-handle");
   const td = e.target.closest("td.cell") || (state.cutMode ? e.target.closest("td.koma-no, td.memo-lane") : null);
   if (!td && !dh) return;
@@ -2660,7 +2677,8 @@ function onSheetPointerUp(e) {
     if (g.targetD !== g.startD) { pushUndo(); setDuration(state.doc.sheet, g.targetD); state.sheetDom = null; markDirty(); renderMain(); }
     else paintSheet();
   } else if (g.mode === "tap" && !g.longFired) {
-    if (g.kind === "g" || g.kind === "d") handleCellTap(g.kind, g.li, g.k, g.type);
+    if (g.kind === "lh") { /* 列名の短いタップ＝改名。click ハンドラに任せる */ }
+    else if (g.kind === "g" || g.kind === "d") handleCellTap(g.kind, g.li, g.k, g.type);
     else handleBlockTap(g.kind, g.li, g.k, g.type);
   } else if (g.mode === "scroll" && g.browseHint && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) <= MOVE_TOL_TOUCH) {
     showBrowseHint(g.td);                    // 版を見ている間に指でマスをタップ＝出口を出す
@@ -3009,9 +3027,23 @@ function openDurationEditor(chip) {
 function addLayer() {
   const doc = state.doc; if (!doc) return;
   pushUndo();
-  doc.sheet.layers.push({ name: nextLayerName(doc.sheet), cells: new Array(doc.sheet.duration).fill(EMPTY) });
+  doc.sheet.layers.push({ name: nextLayerName(doc.sheet), cells: new Array(totalFrames(doc.sheet)).fill(EMPTY) });
   state.sheetDom = null;
   markDirty(); renderMain();
+}
+
+/* 列名を長押し（右クリック）→ その左に空の列を挿入（下のセルは左に書く紙の慣習）。A の左に A下 を置く用。名前は 元の列名+下（使用済みなら次の空き文字）で、その場で書き直せる */
+function insertLayerBelow(li) {
+  const doc = state.doc; if (!doc) return;
+  pushUndo();
+  const base = doc.sheet.layers[li] ? doc.sheet.layers[li].name : "";
+  const used = new Set(doc.sheet.layers.map(L => L.name));
+  const name = base && !used.has(base + "下") ? base + "下" : nextLayerName(doc.sheet);
+  doc.sheet.layers.splice(li, 0, { name, cells: new Array(totalFrames(doc.sheet)).fill(EMPTY) });
+  state.sheetDom = null;
+  markDirty(); renderMain();
+  const th = document.querySelector('th.layer-name[data-kind="g"][data-li="' + li + '"]');
+  if (th) openLayerNameEditor(th, li);
 }
 
 /* ========= 朱を書く（コマ番号をタップ → その行に。列と種類はチップで、文はペン／Scribble） ========= */
