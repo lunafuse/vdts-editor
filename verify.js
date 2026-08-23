@@ -20,7 +20,7 @@
   const api = new Function(pure + "; return { parseXdts, parseLedger, matchLedger, inspect, komaToShaku," +
     " modelFromParsed, modelFingerprint, sheetFingerprint, writeXdts, sha256Hex," +
     " setLabelAt, toggleTickAt, moveChangePoint, isChangePoint, setDuration, ttFromModel," +
-    " newDoc, commitDoc, diffSheets, diffIsEmpty, writeVdts, parseVdts, writeTdts, parseAnyTimesheet, EMPTY, TICK," +
+    " newDoc, commitDoc, diffSheets, diffIsEmpty, writeVdts, writeVdtsLegacy, parseVdts, renderSheetSvg, renderVdtsHtml, writeTdts, parseAnyTimesheet, EMPTY, TICK," +
     " docFingerprint, framesToBlocks, parseAuxBlocks, dougaFromGenga, setBlockEnd, setBlockStart, moveBlock, freeSpanAt, parseCameraText, cameraDisplayText, encodeSpeaker, decodeSpeaker, cameraFromTdtsValue, insertFrames, deleteFrames, layersToText, textToLayers, dialogueToText, textToDialogue, cameraToText, textToCamera, splitDtsEpisode, joinDtsEpisode, setSlack, setSlackHead, totalFrames, displayKoma, fmtEpisode, fmtCut, cutKey, shiftInk };")();
 
 
@@ -138,9 +138,24 @@
   const d = api.diffSheets(vd.history[0].sheet, vd.history[1].sheet);
   check("差分にレイヤーとコマが出る", !api.diffIsEmpty(d) && Object.values(d.layers)[0].komas.length >= 1);
   const vtext = api.writeVdts(vd);
-  check("vdts 1行目が識別ヘッダー", vtext.split("\n")[0] === "versionedDigitalTimeSheet Save Data");
+  check("vdts は絵入りの HTML（DOCTYPE・SVG・埋め込み JSON）", /^<!DOCTYPE html>/.test(vtext) && vtext.includes("<svg") && vtext.includes('type="application/vdts+json"'));
   const doc2 = api.parseVdts(vtext);
   check("vdts ラウンドトリップ", JSON.stringify(doc2) === JSON.stringify(vd));
+  check("旧形式（識別ヘッダー＋JSON）も読める", JSON.stringify(api.parseVdts(api.writeVdtsLegacy(vd))) === JSON.stringify(vd));
+  check("素の JSON も読める", JSON.stringify(api.parseVdts(JSON.stringify(vd))) === JSON.stringify(vd));
+  {
+    const vd3 = JSON.parse(JSON.stringify(vd)); vd3.cut.memo = "閉じタグ </script> と <!-- コメント -->";
+    const t3 = api.writeVdts(vd3);
+    check("メモに閉じタグがあっても HTML が壊れない（JSON 内の < は \\u003c）", t3.split("</script>").length === 2 && api.parseVdts(t3).cut.memo === vd3.cut.memo);
+  }
+  {
+    const svg = api.renderSheetSvg(vd.sheet, vd.annotations);
+    const opens = (svg.match(/<(rect|line|text|polygon|circle|polyline|tspan)\b/g) || []).length, closes = (svg.match(/<\/(text|tspan)>/g) || []).length + (svg.match(/\/>/g) || []).length;
+    check("SVG の要素が閉じている", /^<svg /.test(svg) && /<\/svg>$/.test(svg) && opens === closes);
+    const changes = vd.sheet.layers.reduce((n, L) => n + L.cells.filter((v, i) => v !== api.EMPTY && !/^SYMBOL_TICK/.test(v) && (i === 0 || v !== L.cells[i - 1]) ).length, 0);
+    const nums = (svg.match(/font-size="12\.5" fill="#1e2b33">[^<]+<\/text>/g) || []).length;
+    check("SVG に原画の変化点がすべて番号で描かれる（" + changes + "）", nums >= changes);
+  }
   check("履歴の版は文書指紋を保つ", doc2.history[0].fingerprint === api.docFingerprint({ sheet: doc2.history[0].sheet, cut: doc2.cut }));
   // tdts 書き出し → 読み戻し
   const tt2 = api.writeTdts(vd, { withHistory: true });

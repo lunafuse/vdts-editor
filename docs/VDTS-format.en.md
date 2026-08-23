@@ -4,8 +4,9 @@ VDTS is a **master** format for animation timesheets. One file holds the current
 
 ## File
 
-- Extension `.vdts`, UTF-8
-- Line 1 is the identifier `versionedDigitalTimeSheet Save Data` (same convention as XDTS / TDTS); JSON from line 2
+- Extension **`.vdts.html`**, UTF-8. The file is an **HTML page with the sheet drawn in**: double-click opens it in any browser and shows the sheet (SVG), the header strip, the memo area (text and strokes), notes and the version list — with no JavaScript. The data itself sits at the end in `<script type="application/vdts+json" id="vdts">…</script>` as JSON (`<` escaped as `\u003c`)
+- The drawing is regenerated on every save and is for viewing only; the data is the master. Do not pass the picture around on its own (the banner at the top says so)
+- Readers accept all three: this HTML container, the legacy form (line 1 `versionedDigitalTimeSheet Save Data`, JSON from line 2, extension `.vdts`), and bare JSON. Writers produce the HTML container only
 
 ## Structure
 

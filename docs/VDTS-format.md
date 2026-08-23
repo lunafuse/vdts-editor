@@ -4,8 +4,9 @@ VDTS はアニメーション用タイムシートの**正本**形式。現在�
 
 ## ファイル
 
-- 拡張子 `.vdts`、UTF-8
-- 1行目は識別ヘッダー `versionedDigitalTimeSheet Save Data`（XDTS / TDTS と同じ慣習）、2行目以降が JSON
+- 拡張子 **`.vdts.html`**、UTF-8。中身は**絵入りの HTML**: ダブルクリックでブラウザが開き、JavaScript 無しでシート（SVG）・上段・メモ欄（文字と手書き）・修正指示・申し送り・版の一覧が見える。データ本体は末尾の `<script type="application/vdts+json" id="vdts">…</script>` に JSON で入っている（`<` は `\u003c` にエスケープ）
+- 絵は保存のたびに描き直される「閲覧用の描画」で、正本はデータの方。絵だけを切り出して回さないこと（上の帯にそう書いてある）
+- 読む側は次の3つをどれも受け付ける: この HTML 容器／旧形式（1行目 `versionedDigitalTimeSheet Save Data`、2行目以降 JSON、拡張子 `.vdts`）／素の JSON。書くのは HTML 容器だけ
 
 ## 構造
 

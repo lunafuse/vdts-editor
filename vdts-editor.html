@@ -417,6 +417,7 @@
     <div class="panel-title">使い方</div>
     <ul class="howto">
       <li>VDTS は、バージョン管理を組み込んだ XDTS。保存のたびに版が重なり、いつでも遡れる。XDTS / TDTS はそこから書き出す</li>
+      <li>保存ファイル（.vdts.html）は絵入り。ダブルクリックでブラウザが開き、シート・メモ・修正指示・版が見える（編集はここで）</li>
       <li>数字のマスをタップ — その場で書き直す。打った文字は即反映。別の所を触ると閉じる。Esc で元に戻す</li>
       <li>原画と原画の間の線をタップ — 中割 ○ を付ける／外す</li>
       <li>×の途中、または最後の原画より後をタップ — そのコマから新しい番号を書く</li>
@@ -431,7 +432,7 @@
       <li>コマ番号をタップ — 修正指示・申し送り・要確認を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
       <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／赤／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
       <li>上書き保存 — 名前・役・ひとことを付けて版を1つ重ねる。版 N — 過去の版を表示する</li>
-      <li>作品名・話数・シーン・カットを書き換えると、ボタンは「新規保存」になり、元のファイルには上書きせず新しい .vdts に保存する（元のファイルはそのまま）</li>
+      <li>作品名・話数・シーン・カットを書き換えると、ボタンは「新規保存」になり、元のファイルには上書きせず新しい .vdts.html に保存する（元のファイルはそのまま）</li>
       <li>CSP から持ち込む — CSP EX の ファイル → アニメーション書き出し → タイムシート情報 で xdts を保存。「取り込み」でその xdts を選ぶと、今のシートの原画欄を差し替えて版を1つ重ねる（履歴・指示・動画欄はそのまま）。画面に落とした場合は別の文書として開く</li>
     </ul>
   </div>
@@ -454,7 +455,7 @@
 
 <script>
 "use strict";
-const APP_BUILD = "2026-08-20";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
+const APP_BUILD = "2026-08-23";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
 /* 報告・要望の送り先（Google フォーム）。form が空なら欄そのものを出さない。
    entries は フォームの各設問の entry.xxxx（viewform の HTML から拾う）。送るのは 本文・APP_BUILD・ブラウザ名 の3つだけ */
 const FEEDBACK = { form: "https://docs.google.com/forms/d/e/1FAIpQLSfTP942oJysditNOCsHMGnQEP84iVfqjVZtzik2yx9Vj859aA", entries: { message: "entry.1813748369", build: "entry.1186825091", browser: "entry.1335203625" } };
@@ -1368,9 +1369,19 @@ function diffSheets(a, b) {
 }
 function diffIsEmpty(d) { return !d.duration && !d.slack && Object.keys(d.layers).length === 0 && !d.douga && !d.dialogue && !d.camera && !d.ink; }
 
-function writeVdts(doc) { return VDTS_HEADER + "\n" + JSON.stringify(doc, null, 1); }
+/* 保存形式（2026-08-22〜）: 絵入りの HTML（renderVdtsHtml）。拡張子 .vdts.html。ダブルクリックでブラウザが開き、JavaScript 無しでシートが見える。
+   読むときは 旧形式（1行目 versionedDigitalTimeSheet Save Data ＋ JSON）・HTML 容器・素の JSON のどれでも受ける */
+function writeVdts(doc) { return renderVdtsHtml(doc); }
+function writeVdtsLegacy(doc) { return VDTS_HEADER + "\n" + JSON.stringify(doc, null, 1); }
+function isVdtsText(text) { return /^versionedDigitalTimeSheet Save Data/.test(text) || /<script[^>]*type="application\/vdts\+json"/i.test(text); }
+function vdtsJsonFromText(text) {
+  if (/^versionedDigitalTimeSheet Save Data/.test(text)) return text.replace(/^versionedDigitalTimeSheet Save Data\r?\n/, "");
+  const m = text.match(/<script[^>]*type="application\/vdts\+json"[^>]*>([\s\S]*?)<\/script>/i);
+  if (m) return m[1];
+  return text;
+}
 function parseVdts(text) {
-  const body = text.replace(/^versionedDigitalTimeSheet Save Data\r?\n/, "");
+  const body = vdtsJsonFromText(text);
   const doc = JSON.parse(body);
   if (doc.format !== "vdts" || !doc.sheet || !Array.isArray(doc.sheet.layers)) throw new Error("vdts ではありません");
   doc.history = Array.isArray(doc.history) ? doc.history : [];
@@ -1462,6 +1473,256 @@ function writeTdts(doc, opts) {
   return "toeiDigitalTimeSheet Save Data\n" + JSON.stringify({ timeSheets, version: o.version || 7 }, null, 2);
 }
 
+/* ========= 静的描画（SVG）と HTML 容器: 保存ファイル（.vdts.html）は「開けば絵が見える」正本。JavaScript 無しで表示できる。
+   画面の描画（buildSheetDom / paintSheet）と同じ規約で描く: 4:3 のマス、6コマ中罫・24コマ太罫・144コマ二重罫、× と ○、
+   台詞は散らして縦に、カメラは ▲線と丸囲み、余尺はグレー、総尺の終わりに赤線。絵は保存のたびに描き直す（データと同時に更新される） ========= */
+const SVG_G = { cellW: 30, cellH: 22, komaW: 36, auxW: 58, laneW: 16, headH: 44 };
+const SPEAKER_COLORS = ["#1e2b33", "#c7361f", "#2b7a3a", "#2e4bc0", "#a02aa0", "#d07a10"];   // 話者の色（東映DTSの6色、登場順）
+function svgEsc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+/* 文字を欄に沿って散らす（Auto Sheet と同じ: 1.5コマ目から、終わりの0.6コマ手前まで、1文字の間隔は最大3コマ） */
+function spreadOffsets(totalHeight, rowH, count, maxStepRows) {
+  if (!count) return [];
+  const start = rowH * 1.5, end = Math.max(start, totalHeight - rowH * 0.6);
+  const step = count > 1 ? Math.min(rowH * (maxStepRows || 3), (end - start) / (count - 1)) : 0;
+  return Array.from({ length: count }, (_, i) => start + step * i);
+}
+function speakerColorsFor(sheet) {
+  const names = [];
+  (sheet.dialogue || []).slice().sort((a, b) => a.from - b.from).forEach(b => { const sp = (b.speaker || "").trim(); if (sp && !names.includes(sp)) names.push(sp); });
+  const map = {};
+  names.forEach((nm, i) => { map[nm] = SPEAKER_COLORS[i % SPEAKER_COLORS.length]; });
+  return map;
+}
+
+function renderSheetSvg(sheetIn, annotations) {
+  const sheet = normalizeSheet(cloneModel(sheetIn));
+  const G = SVG_G, D = totalFrames(sheet), hasDouga = sheet.douga.length > 0;
+  const MONO = "'SF Mono', Consolas, 'Cascadia Mono', Menlo, monospace", SANS = "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', sans-serif";
+  const INK = "#1e2b33", PENCIL = "#6b7a84", RULE = "#b8d4d8", RULE_MID = "#8fb8be", SHU = "#c7361f", SLACK_BG = "#ececec", SLACK_FG = "#9aa3a8";
+  const cols = []; let x = 0;
+  cols.push({ kind: "koma", li: 0, x, w: G.komaW }); x += G.komaW;
+  sheet.layers.forEach((L, li) => { cols.push({ kind: "g", li, x, w: G.cellW }); x += G.cellW; });
+  const sX = x; cols.push({ kind: "s", li: 0, x, w: G.auxW }); x += G.auxW; cols.push({ kind: "s", li: 1, x, w: G.auxW }); x += G.auxW;
+  const dX = x; sheet.douga.forEach((L, li) => { cols.push({ kind: "d", li, x, w: G.cellW }); x += G.cellW; });
+  const cX = x; cols.push({ kind: "c", li: 0, x, w: G.auxW }); x += G.auxW; cols.push({ kind: "c", li: 1, x, w: G.auxW }); x += G.auxW;
+  const laneX = x; cols.push({ kind: "lane", li: 0, x, w: G.laneW }); x += G.laneW;
+  const W = x, top = G.headH, bottom = top + D * G.cellH, H = bottom + 3, PAD = 44;   // PAD: 楔形のラベル（O.L 次カットへ など）が右にはみ出す分
+  const rowY = k => top + (k - 1) * G.cellH;
+  const colOf = (kind, li) => cols.find(c => c.kind === kind && c.li === li);
+  const r2 = n => Math.round(n * 100) / 100;
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W + PAD}" height="${H}" viewBox="0 0 ${W + PAD} ${H}" font-family="${MONO}" fill="${INK}">`);
+  out.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#fdfdfb"/>`);
+  for (let k = 1; k <= D; k++) if (isSlackFrame(sheet, k)) out.push(`<rect x="0" y="${rowY(k)}" width="${W}" height="${G.cellH}" fill="${SLACK_BG}"/>`);
+  if (hasDouga) out.push(`<rect x="${dX}" y="${top}" width="${sheet.douga.length * G.cellW}" height="${D * G.cellH}" fill="#f6f9fa" opacity="0.9"/>`);
+  // 見出し（欄のグループ名、列名）
+  const groupText = (x0, w, t) => `<text x="${r2(x0 + w / 2)}" y="12" text-anchor="middle" font-size="10" fill="${PENCIL}" letter-spacing="1.4" font-family="${SANS}">${svgEsc(t)}</text>`;
+  out.push(groupText(G.komaW, sheet.layers.length * G.cellW, "原画"), groupText(sX, 2 * G.auxW, "台詞"));
+  if (hasDouga) out.push(groupText(dX, sheet.douga.length * G.cellW, "動画"));
+  out.push(groupText(cX, 2 * G.auxW, "カメラ"));
+  out.push(`<line x1="0" y1="18" x2="${W}" y2="18" stroke="${RULE_MID}" stroke-width="1"/>`);
+  const headText = (c, t, color) => `<text x="${r2(c.x + c.w / 2)}" y="${top - 9}" text-anchor="middle" font-size="12.5" fill="${color || INK}">${svgEsc(t)}</text>`;
+  out.push(headText(colOf("koma", 0), "コマ"));
+  sheet.layers.forEach((L, li) => out.push(headText(colOf("g", li), L.name)));
+  out.push(headText(colOf("s", 0), "S1", PENCIL), headText(colOf("s", 1), "S2", PENCIL));
+  sheet.douga.forEach((L, li) => out.push(headText(colOf("d", li), L.name)));
+  out.push(headText(colOf("c", 0), "CAM1", PENCIL), headText(colOf("c", 1), "CAM2", PENCIL));
+  // 横罫: 台詞・カメラ欄は引かない（開けた欄）。ページ罫と総尺の終わりは全幅
+  const hseg = (y, color, w, dash) => [[0, sX], [dX, cX], [laneX, W]].forEach(([a, b]) => { if (b > a) out.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="${color}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`); });
+  for (let k = 1; k <= D; k++) {
+    const dk = displayKoma(sheet, k), y = rowY(k) + G.cellH;
+    const page = dk > 0 && dk % PAGE_FRAMES === 0, sec = dk > 0 && dk % 24 === 0, six = dk > 0 && dk % 6 === 0;
+    if (k === D) continue;
+    if (page) { out.push(`<line x1="0" y1="${y - 1.5}" x2="${W}" y2="${y - 1.5}" stroke="${INK}" stroke-width="1"/><line x1="0" y1="${y + 1.5}" x2="${W}" y2="${y + 1.5}" stroke="${INK}" stroke-width="1"/>`); }
+    else if (sec) hseg(y, INK, 2);
+    else if (six) hseg(y, RULE_MID, 1);
+    else hseg(y, RULE, 1);
+  }
+  // 縦罫: マス列は水色、台詞・カメラ欄は左端だけ中罫色
+  cols.forEach(c => {
+    if (c.kind === "koma" || c.kind === "g" || c.kind === "d" || c.kind === "lane") out.push(`<line x1="${c.x}" y1="${top}" x2="${c.x}" y2="${bottom}" stroke="${RULE}" stroke-width="1"/>`);
+    else if (c.li === 0) out.push(`<line x1="${c.x}" y1="${top}" x2="${c.x}" y2="${bottom}" stroke="${RULE_MID}" stroke-width="1"/>`);
+  });
+  out.push(`<line x1="${W - 0.5}" y1="${top}" x2="${W - 0.5}" y2="${bottom}" stroke="${RULE}" stroke-width="1"/>`);
+  out.push(`<line x1="0" y1="${top}" x2="${W}" y2="${top}" stroke="${INK}" stroke-width="2"/>`);
+  // コマ番号
+  for (let k = 1; k <= D; k++) out.push(`<text x="${G.komaW / 2}" y="${r2(rowY(k) + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="10" fill="${isSlackFrame(sheet, k) ? SLACK_FG : PENCIL}">${displayKoma(sheet, k)}</text>`);
+  // マス（原画・動画）: 変化点に番号（空は ×）、ホールドは縦線（空は破線）、中割は ○/● と下半分の線。全部空の列は何も書かない
+  const paintCol = (kind, li, L) => {
+    const c = colOf(kind, li), cells = L.cells; if (!c || !cells.some(v => v !== EMPTY)) return;
+    let held = EMPTY;
+    for (let i = 0; i < cells.length; i++) {
+      const v = cells[i], k = i + 1, y = rowY(k), cx = r2(c.x + c.w / 2), slack = isSlackFrame(sheet, k);
+      const tick = isTick(v), empty = !tick && isEmptyCell(v), change = !tick && (i === 0 || v !== held);
+      const lineColor = slack ? SLACK_FG : (empty ? PENCIL : INK);
+      if (tick) {
+        out.push(`<text x="${cx}" y="${r2(y + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="11">${v === "SYMBOL_TICK_2" ? "●" : "○"}</text>`);
+        out.push(`<line x1="${cx}" y1="${r2(y + G.cellH * 0.6)}" x2="${cx}" y2="${y + G.cellH}" stroke="${lineColor}" stroke-width="1" opacity="0.55"/>`);
+      } else if (change) {
+        out.push(`<text x="${cx}" y="${r2(y + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="12.5" fill="${empty ? PENCIL : (slack ? SLACK_FG : INK)}">${svgEsc(displayCell(v))}</text>`);
+      } else {
+        out.push(`<line x1="${cx}" y1="${y}" x2="${cx}" y2="${y + G.cellH}" stroke="${lineColor}" stroke-width="1" opacity="0.55"${empty ? ' stroke-dasharray="3 2"' : ""}/>`);
+      }
+      if (!tick) held = v;
+    }
+  };
+  sheet.layers.forEach((L, li) => paintCol("g", li, L));
+  sheet.douga.forEach((L, li) => paintCol("d", li, L));
+  // 台詞: 上下に朱線、30% にガイド（口パク無しの (M)/(OFF)/(N) は破線）、話者の箱、文字は散らして縦に
+  const colors = speakerColorsFor(sheet);
+  (sheet.dialogue || []).forEach(b => {
+    const c = colOf("s", b.lane || 0); if (!c) return;
+    const from = Math.max(1, b.from), to = Math.min(D, b.to); if (to < from) return;
+    const y0 = rowY(from), h = (to - from + 1) * G.cellH;
+    const speaker = String(b.speaker || "").trim(), dk = String(b.kind || ""), color = colors[speaker] || SPEAKER_COLORS[0];
+    const gx = r2(c.x + c.w * 0.30);
+    out.push(`<line x1="${c.x}" y1="${y0 + 1}" x2="${c.x + c.w}" y2="${y0 + 1}" stroke="${SHU}" stroke-width="2"/>`);
+    out.push(`<line x1="${c.x}" y1="${y0 + h - 1}" x2="${c.x + c.w}" y2="${y0 + h - 1}" stroke="${SHU}" stroke-width="2"/>`);
+    out.push(`<line x1="${gx}" y1="${y0}" x2="${gx}" y2="${y0 + h}" stroke="${color}" stroke-width="1" opacity="0.8"${dk && dk !== "SE" ? ' stroke-dasharray="4 3"' : ""}/>`);
+    const label = speaker || (dk === "SE" ? "SE" : ""), kindTag = dk && !(dk === "SE" && !speaker) ? "(" + dk + ")" : "";
+    if (label || kindTag) {
+      out.push(`<rect x="${c.x + 3}" y="${y0 + 3}" width="${c.w - 6}" height="14" rx="2" fill="#fff" stroke="${color}" stroke-width="1.2"/>`);
+      out.push(`<text x="${r2(c.x + c.w / 2)}" y="${y0 + 10}" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="700" fill="${color}" font-family="${SANS}">${svgEsc(label)}<tspan font-size="8.5">${svgEsc(kindTag)}</tspan></text>`);
+    }
+    const chars = Array.from(String(b.text || "")), offs = spreadOffsets(h, G.cellH, chars.length, 3);
+    chars.forEach((ch, i) => out.push(`<text x="${r2(c.x + c.w * 0.34)}" y="${r2(y0 + offs[i])}" dominant-baseline="central" font-size="14" font-weight="600" fill="${color}" font-family="${SANS}">${svgEsc(ch)}</text>`));
+  });
+  // カメラ: 持続線と ▲（内側向き）、丸囲みのフレーム名、動きの名前は縦。F.I/F.O/O.L は楔形
+  (sheet.camera || []).forEach(b => {
+    const c = colOf("c", b.lane || 0); if (!c) return;
+    const from = Math.max(1, b.from), to = Math.min(D, b.to); if (to < from) return;
+    const y0 = rowY(from), h = (to - from + 1) * G.cellH;
+    const kind = b.kind || "", isFix = kind === "FIX" || (b.fromLabel && b.fromLabel === b.toLabel);
+    const shape = kind === "F.I" ? "fi" : kind === "F.O" ? "fo" : kind === "O.L" ? "ol" : "";
+    const label = isFix ? "FIX" : kind + (b.text ? (kind ? " " : "") + b.text : "");
+    const lx = r2(c.x + c.w * 0.30), rx = r2(c.x + c.w * 0.44);
+    const ring = (t, cy) => t ? `<circle cx="${rx + 8}" cy="${cy}" r="8" fill="#fff" stroke="${INK}" stroke-width="1.2"/><text x="${rx + 8}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="700">${svgEsc(t)}</text>` : "";
+    if (shape) {
+      const sx0 = r2(c.x + c.w * 0.12), sw = r2(c.w * 0.56), sy0 = y0 + 2, sy1 = y0 + h - 2, mx = r2(sx0 + sw / 2), my = r2((sy0 + sy1) / 2);
+      const pts = shape === "fi" ? `${mx},${sy0} ${r2(sx0 + sw)},${sy1} ${sx0},${sy1}` : shape === "fo" ? `${sx0},${sy0} ${r2(sx0 + sw)},${sy0} ${mx},${sy1}` : `${sx0},${sy0} ${r2(sx0 + sw)},${sy0} ${mx},${my} ${r2(sx0 + sw)},${sy1} ${sx0},${sy1} ${mx},${my}`;
+      out.push(`<polygon points="${pts}" fill="rgba(46,111,163,0.35)" stroke="${INK}" stroke-width="1"/>`);
+      out.push(`<text x="${r2(c.x + c.w * 0.70)}" y="${my}" dominant-baseline="central" font-size="11" font-weight="800" fill="${SHU}">${svgEsc(label)}</text>`);
+      if (b.fromLabel) out.push(ring(b.fromLabel, y0 + 6));
+      if (b.toLabel) out.push(ring(b.toLabel, y0 + h - 6));
+    } else {
+      out.push(`<line x1="${lx}" y1="${y0}" x2="${lx}" y2="${y0 + h}" stroke="${INK}" stroke-width="1.2"/>`);
+      out.push(`<polygon points="${lx - 6},${y0} ${lx + 6},${y0} ${lx},${y0 + 11}" fill="${INK}"/>`);
+      out.push(`<polygon points="${lx - 6},${y0 + h} ${lx + 6},${y0 + h} ${lx},${y0 + h - 11}" fill="${INK}"/>`);
+      out.push(ring(b.fromLabel, y0 + 6), ring(b.toLabel, y0 + h - 6));
+      const chars = Array.from(label), offs = spreadOffsets(h, G.cellH, chars.length, 0.75);
+      chars.forEach((ch, i) => out.push(`<text x="${rx}" y="${r2(y0 + offs[i])}" dominant-baseline="central" font-size="12" font-weight="700">${svgEsc(ch)}</text>`));
+    }
+  });
+  // 未解消の修正指示・申し送り: 右端の帯
+  (annotations || []).filter(a => a.state !== "済" && a.anchor && a.anchor.komaStart >= 1).forEach((a, i) => {
+    const s = Math.max(1, a.anchor.komaStart), e = Math.min(D, a.anchor.komaEnd || s); if (e < s) return;
+    const color = a.kind === "shusei" ? SHU : a.kind === "moushiokuri" ? INK : PENCIL;
+    out.push(`<rect x="${laneX + 2 + (i % 3) * 5}" y="${rowY(s) + 2}" width="4" height="${(e - s + 1) * G.cellH - 4}" rx="2" fill="${color}" opacity="0.85"/>`);
+  });
+  // 総尺の終わり＝朱線、外枠
+  out.push(`<line x1="0" y1="${bottom + 1}" x2="${W}" y2="${bottom + 1}" stroke="${SHU}" stroke-width="2.5"/>`);
+  out.push(`<rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${RULE}" stroke-width="1"/>`);
+  out.push("</svg>");
+  return out.join("\n");
+}
+
+/* メモ欄の手書きを SVG に（座標は欄の幅・高さに対する割合。幅方向は欄に合わせて伸びるので線幅は non-scaling） */
+function renderMemoInkSvg(ink, height) {
+  const h = Math.max(60, Number(height) || 150);
+  const strokes = (ink || []).filter(st => st.zone === "memo" && st.points && st.points.length);
+  if (!strokes.length) return "";
+  const paths = strokes.map(st => {
+    const pts = st.points.map(p => `${Math.round((p.fx || 0) * 10000) / 10},${Math.round((p.y || 0) * h * 10) / 10}`).join(" ");
+    const pr = st.points.reduce((s, p) => s + (p.p == null ? 0.5 : p.p), 0) / st.points.length;
+    const w = (st.width === "thick" ? 3.2 : 1.6) * (0.6 + 0.8 * Math.max(0, Math.min(1, pr)));
+    const color = INK_COLORS[st.color] || INK_COLORS.black;
+    return st.points.length === 1 ? `<circle cx="${pts.split(",")[0]}" cy="${pts.split(",")[1]}" r="${w}" fill="${color}"/>`
+      : `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${Math.round(w * 100) / 100}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="memo-ink" viewBox="0 0 1000 ${h}" preserveAspectRatio="none" width="100%" height="${h}">${paths.join("")}</svg>`;
+}
+
+/* 保存ファイル = 絵入りの HTML。上から: 帯（閲覧用の描画・版・指紋）、紙の上段、メモ欄（文字＋手書き）、シート（SVG）、修正指示・申し送り、版の一覧、最後にデータ（JSON） */
+const VDTS_JSON_TYPE = "application/vdts+json";
+function vdtsStem(doc) {
+  const clean = v => String(v == null ? "" : v).trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "");
+  const parts = [clean(doc.cut.title), clean(fmtEpisode(doc.cut.episode)), clean(fmtScene(doc.cut.scene)), clean(fmtCut(doc.cut.cut))].filter(Boolean);
+  return parts.join("_");
+}
+function renderVdtsHtml(doc) {
+  const cut = doc.cut || {}, sheet = doc.sheet, last = doc.history[doc.history.length - 1] || null;
+  const stem = vdtsStem(doc) || "sheet";
+  const when = s => String(s || "").replace("T", " ").replace(/[+\-]\d\d:\d\d$/, "");
+  const e = svgEsc;
+  const total = totalFrames(sheet), D = sheet.duration;
+  const shaku = (sheet.slackHead || sheet.slack) ? `${komaToShaku(total)} <small>(${total}) ＝ ${komaToShaku(D)} ＋ ${sheet.slackHead || 0} ＋ ${sheet.slack || 0}</small>` : `${komaToShaku(D)} <small>(${D})</small>`;
+  const head = [
+    ["話数", cut.episode ? fmtEpisode(cut.episode) : "—", "num"], ["作品名", cut.title || "—", ""], ["シーン", cut.scene ? fmtScene(cut.scene) : "—", "num"],
+    ["カット", cut.cut ? fmtCut(cut.cut) : "000", "num big"], ["尺", shaku, "num raw"], ["作業者", cut.author || "—", ""], ["ページ", `${pageCount(total)} 枚 <small>(${PAGE_FRAMES}コマ/枚)</small>`, "num raw"],
+  ].map(([k, v, cls]) => `<div class="ph ${cls}"><div class="ph-k">${e(k)}</div><div class="ph-v">${/raw/.test(cls) ? v : e(v)}</div></div>`).join("");
+  const memoH = Math.max(60, Number(cut.memoHeight) || 150);
+  const memo = `<div class="memo" style="min-height:${memoH}px"><div class="ph-k">メモ欄</div><div class="memo-text">${e(cut.memo || "")}</div>${renderMemoInkSvg(sheet.ink, memoH)}</div>`;
+  const kindLabel = k => k === "shusei" ? "修正指示" : k === "moushiokuri" ? "申し送り" : k === "kakunin" ? "要確認" : String(k || "");
+  const notes = (doc.annotations || []).slice().reverse().map(a => {
+    const target = a.anchor ? `${e(a.anchor.layer || "全体")} ${a.anchor.komaStart}${a.anchor.komaEnd && a.anchor.komaEnd !== a.anchor.komaStart ? "〜" + a.anchor.komaEnd : ""}コマ` : "カット全体";
+    return `<li class="${a.kind === "shusei" ? "shusei" : a.kind === "moushiokuri" ? "moushiokuri" : "kakunin"}${a.state === "済" ? " done" : ""}"><b>${e(kindLabel(a.kind))}</b> <span class="num">${target}</span> ${e(a.text || "")} <small>${e(a.role || "")} ${e(a.who || "")} ${e(when(a.at))} ／ 版${a.madeAgainst || "?"}に対して${a.resolvedIn ? "・版" + a.resolvedIn + "で解消" : a.state === "済" ? "・解消" : "・未解消"}</small></li>`;
+  }).join("");
+  const hist = (doc.history || []).slice().reverse().map(h => `<li><b>版 ${h.id}</b> <span class="num">${e(when(h.at))}</span> ${e(h.role || "")} ${e(h.who || "")} ${e(h.note || "")} <small class="num">${e(String(h.fingerprint || "").slice(7, 19))}</small></li>`).join("");
+  const band = last ? `版 ${last.id}（${e(when(last.at))} ${e(last.role || "")} ${e(last.who || "")}${last.note ? "「" + e(last.note) + "」" : ""}）　指紋 <span class="num">${e(String(last.fingerprint || "").slice(7, 19))}</span>` : "版なし";
+  const json = JSON.stringify(doc, null, 1).replace(/</g, "\\u003c");   // 閉じタグやコメント開始の文字列が入っても HTML が壊れないように（< を \\u003c に）
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${e(stem)} 版${last ? last.id : 0} — VDTS</title>
+<style>
+  body { margin: 0; padding: 16px 20px 40px; background: #f2f3f0; color: #1e2b33; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif; font-size: 13px; line-height: 1.6; }
+  .num { font-family: "SF Mono", Consolas, "Cascadia Mono", Menlo, monospace; }
+  small { font-size: 10.5px; color: #6b7a84; font-weight: 400; }
+  .band { background: #eef4f8; border: 1px solid #2e6fa3; border-radius: 4px; padding: 6px 10px; margin-bottom: 12px; font-size: 12px; }
+  .band b { color: #2e6fa3; }
+  .paper { background: #fdfdfb; border: 2px solid #1e2b33; max-width: 980px; }
+  .head { display: grid; grid-template-columns: 0.8fr 2fr 0.8fr 0.9fr 2.4fr 1.2fr 1.5fr; }
+  .ph.raw .ph-v { white-space: nowrap; }
+  .ph { border-right: 1px solid #8fb8be; padding: 4px 8px 6px; min-height: 52px; }
+  .ph:last-child { border-right: none; }
+  .ph-k { font-size: 9.5px; letter-spacing: 0.12em; color: #6b7a84; }
+  .ph-v { font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .ph.num .ph-v { font-family: "SF Mono", Consolas, "Cascadia Mono", Menlo, monospace; }
+  .ph.big .ph-v { font-size: 20px; }
+  .memo { position: relative; border-top: 1px solid #8fb8be; padding: 4px 8px 8px; }
+  .memo-text { white-space: pre-wrap; font-weight: 500; }
+  .memo-ink { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .sheet { margin-top: 14px; overflow-x: auto; }
+  .sheet svg { display: block; }
+  h2 { font-size: 11px; letter-spacing: 0.12em; color: #6b7a84; font-weight: 400; margin: 18px 0 4px; }
+  ul { list-style: none; padding: 0; margin: 0; max-width: 980px; }
+  li { padding: 4px 8px; border-left: 3px solid #6b7a84; background: #fdfdfb; margin-bottom: 3px; }
+  li.shusei { border-left-color: #c7361f; } li.moushiokuri { border-left-color: #1e2b33; } li.done { opacity: 0.55; }
+  .foot { margin-top: 16px; font-size: 11px; color: #6b7a84; }
+</style>
+</head>
+<body>
+<div class="band"><b>閲覧用の描画</b> — 正本はこのファイルの中のデータ（VDTS）。編集は VDTS Editor で開いて。　${band}</div>
+<div class="paper">
+  <div class="head">${head}</div>
+  ${memo}
+</div>
+<div class="sheet">${renderSheetSvg(sheet, doc.annotations)}</div>
+<h2>修正指示・申し送り（${(doc.annotations || []).filter(a => a.state !== "済").length} 件 未解消）</h2>
+<ul>${notes || "<li>なし</li>"}</ul>
+<h2>版（履歴 ${(doc.history || []).length}）</h2>
+<ul>${hist || "<li>なし</li>"}</ul>
+<div class="foot">このファイルは VDTS（versioned Digital Time Sheet）。上の絵は保存時に描いたもので、正本はこの下のデータ。絵だけを切り出して回さないでください。</div>
+<script type="${VDTS_JSON_TYPE}" id="vdts">
+${json}
+<\/script>
+</body>
+</html>
+`;
+}
+
 /* ========= フォルダ監視・ファイル ========= */
 
 const state = {
@@ -1495,8 +1756,8 @@ $("newBtn").addEventListener("click", async () => {
   const model = { duration: 24 * 3, slack: 0, slackHead: 0, layers: ["A", "B", "C"].map(nm => ({ name: nm, cells: new Array(24 * 3).fill(EMPTY) })) };
   const doc = newDoc(model, {});
   commitDoc(doc, { who: state.session.who, role: state.session.role, note: "新規作成" });
-  let base = "新規シート", name = base + ".vdts", i = 2;
-  while (state.files.has(name)) { name = base + i + ".vdts"; i++; }
+  let base = "新規シート", name = base + ".vdts.html", i = 2;
+  while (state.files.has(name)) { name = base + i + ".vdts.html"; i++; }
   const text = writeVdts(doc);
   const rec = { handle: null, mtime: Date.now(), kind: "vdts", result: null };
   state.files.set(name, rec);
@@ -1512,14 +1773,14 @@ $("newBtn").addEventListener("click", async () => {
 $("openBtn").addEventListener("click", async () => {
   if (window.showOpenFilePicker) {
     try {
-      const [fh] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "タイムシート", accept: { "application/octet-stream": [".xdts", ".tdts", ".vdts"] } }] });
+      const [fh] = await window.showOpenFilePicker({ multiple: false, types: [{ description: "タイムシート", accept: { "application/octet-stream": [".xdts", ".tdts", ".vdts"], "text/html": [".html"] } }] });
       const file = await fh.getFile();
       await openStandaloneFile(file, fh);
     } catch (e) { if (e.name !== "AbortError") showError("開けません: " + e.message); }
     return;
   }
   const inp = document.createElement("input");
-  inp.type = "file"; inp.accept = ".xdts,.tdts,.vdts";
+  inp.type = "file"; inp.accept = ".xdts,.tdts,.vdts,.html";
   inp.addEventListener("change", async () => { if (inp.files[0]) await openStandaloneFile(inp.files[0], null); });
   inp.click();
 });
@@ -1534,7 +1795,7 @@ main.addEventListener("drop", async e => {
   for (const f of files) {
     if (/\.memo\.json$/i.test(f.name)) { const rec = { mtime: f.lastModified, data: null, error: null }; readMemo(f.name, rec, await f.text()); state.memoFiles.set(f.name, rec); continue; }
     if (/\.csv$/i.test(f.name)) { applyLedger(await f.text(), f.name); reinspectAll(); render(); continue; }
-    if (!/\.(xdts|tdts|vdts)$/i.test(f.name)) continue;
+    if (!/\.(xdts|tdts|vdts|html)$/i.test(f.name)) continue;
     let handle = null;
     const item = [...e.dataTransfer.items].find(it => it.kind === "file" && it.getAsFile() && it.getAsFile().name === f.name);
     if (item && item.getAsFileSystemHandle) { try { handle = await item.getAsFileSystemHandle(); } catch (err) { handle = null; } }
@@ -1572,12 +1833,14 @@ async function importIntoCurrent(file) {
 }
 
 async function openStandaloneFile(file, handle) {
-  const kind = /\.vdts$/i.test(file.name) ? "vdts" : /\.tdts$/i.test(file.name) ? "tdts" : "xdts";
+  const text = await file.text();
+  // 種別は中身で決める（.vdts.html / 旧 .vdts / .tdts / .xdts）
+  const kind = isVdtsText(text) ? "vdts" : isTdtsText(text) ? "tdts" : /\.vdts$/i.test(file.name) ? "vdts" : /\.tdts$/i.test(file.name) ? "tdts" : "xdts";
   if (!(await confirmDiscardIfDirty())) return;
   const path = file.name;
   const rec = { handle, mtime: file.lastModified, kind, result: null };
   state.files.set(path, rec);
-  inspectText(path, rec, await file.text(), file.lastModified);
+  inspectText(path, rec, text, file.lastModified);
   state.selectedPath = path;
   loadDocFromRec(path, rec);
   render();
@@ -1709,7 +1972,7 @@ function loadDocFromRec(path, rec) {
   if (!rec || !rec.result || rec.result.parseError) { state.doc = null; state.src = null; return; }
   const r = rec.result;
   const basename = r.basename;
-  const stem = basename.replace(/\.(xdts|tdts|vdts)$/i, "");
+  const stem = basename.replace(/\.vdts\.html$|\.(xdts|tdts|vdts|html)$/i, "");
   let doc;
   if (rec.kind === "vdts") {
     doc = JSON.parse(JSON.stringify(r.doc));
@@ -1977,7 +2240,7 @@ function renderTools() {
   const box = $("toolsBox"); if (!box || !state.doc) return;
   const D = state.doc.sheet.duration;
   box.innerHTML = `<div class="tools">
-    <button id="tSave" title="${cutChangedSinceOpen() ? "作品名・話数・シーン・カットが開いたときから変わっているので、元のファイルには上書きせず、版を1つ重ねて新しい .vdts に保存する（保存先を聞く）" : "版を1つ重ねて .vdts へ上書き保存（初回だけ保存先を聞く）"}">${saveVerb()}${state.src && state.src.kind === "vdts" ? "" : "（.vdts を作る）"}</button>
+    <button id="tSave" title="${cutChangedSinceOpen() ? "作品名・話数・シーン・カットが開いたときから変わっているので、元のファイルには上書きせず、版を1つ重ねて新しい .vdts.html に保存する（保存先を聞く）" : "版を1つ重ねて .vdts.html へ上書き保存（初回だけ保存先を聞く）"}">${saveVerb()}${state.src && state.src.kind === "vdts" ? "" : "（.vdts.html を作る）"}</button>
     <button class="ghost" id="tXdts" title="CSP 等へ渡す">xdts 書き出し</button>
     <button class="ghost" id="tTdts" title="東映DTS へ渡す">tdts 書き出し</button>
     <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・指示・動画欄はそのまま）">取り込み</button>
@@ -2194,21 +2457,7 @@ function paintCellsColumn(kind, li, L, diffSet) {
   }
 }
 
-const SPEAKER_COLORS = ["#1e2b33", "#c7361f", "#2b7a3a", "#2e4bc0", "#a02aa0", "#d07a10"];
-function speakerColorMap() {
-  const names = [];
-  (viewedSheet().dialogue || []).slice().sort((a, b) => a.from - b.from).forEach(b => { const sp = (b.speaker || "").trim(); if (sp && !names.includes(sp)) names.push(sp); });
-  const map = {};
-  names.forEach((nm, i) => { map[nm] = SPEAKER_COLORS[i % SPEAKER_COLORS.length]; });
-  return map;
-}
-/* 文字を欄に沿って散らす（Auto Sheet と同じ: 1.5コマ目から、終わりの0.6コマ手前まで、1文字の間隔は最大3コマ） */
-function spreadOffsets(totalHeight, rowH, count, maxStepRows) {
-  if (!count) return [];
-  const start = rowH * 1.5, end = Math.max(start, totalHeight - rowH * 0.6);
-  const step = count > 1 ? Math.min(rowH * (maxStepRows || 3), (end - start) / (count - 1)) : 0;
-  return Array.from({ length: count }, (_, i) => start + step * i);
-}
+function speakerColorMap() { return speakerColorsFor(viewedSheet()); }
 
 function paintBlocks(kind) {
   const dom = state.sheetDom;
@@ -3250,7 +3499,7 @@ function openCommitPopup(opts) {
   const o = opts || {};
   const anchor = $("tSave") ? $("tSave").getBoundingClientRect() : { left: 100, right: 200, top: 100 };
   const el = showPopup(`
-    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${o.onlyIdentity ? "いま作業している人" : saveVerb() + " — 版 " + (doc.history.length + 1) + " として" + (cutChangedSinceOpen() ? "、新しい .vdts に（" + esc(defaultStem(doc, state.src.basename)) + ".vdts）。元の " + esc(state.src.basename) + " はそのまま" : "")}</div>
+    <div style="font-size:11px;color:var(--pencil);letter-spacing:.1em;margin-bottom:6px">${o.onlyIdentity ? "いま作業している人" : saveVerb() + " — 版 " + (doc.history.length + 1) + " として" + (cutChangedSinceOpen() ? "、新しいファイルに（" + esc(defaultStem(doc, state.src.basename)) + ".vdts.html）。元の " + esc(state.src.basename) + " はそのまま" : "")}</div>
     <div id="cpRoles">${VDTS_ROLES.map(r => `<span class="chip" data-role="${r}" style="${CHIP_CSS}${r === state.session.role ? CHIP_ON : ""}">${r}</span>`).join("")}</div>
     <input id="cpWho" placeholder="名前" value="${esc(state.session.who)}" style="margin-top:6px;width:100%;font:inherit;font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:6px 8px">
     ${o.onlyIdentity ? "" : `<textarea id="cpNote" placeholder="ひとこと（任意）" style="margin-top:6px;min-height:48px;font-family:inherit"></textarea>`}
@@ -3295,7 +3544,7 @@ function saveVerb() { return cutChangedSinceOpen() ? "新規保存" : "上書き
 function defaultStem(doc, fallback) {
   const clean = v => String(v == null ? "" : v).trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "");
   const parts = [clean(doc.cut.title), clean(fmtEpisode(doc.cut.episode)), clean(fmtScene(doc.cut.scene)), clean(fmtCut(doc.cut.cut))].filter(Boolean);
-  return parts.length ? parts.join("_") : String(fallback || "sheet").replace(/\.(xdts|tdts|vdts)$/i, "");
+  return parts.length ? parts.join("_") : String(fallback || "sheet").replace(/\.vdts\.html$|\.(xdts|tdts|vdts|html)$/i, "");
 }
 
 async function saveVdts(note, opts) {
@@ -3310,7 +3559,7 @@ async function saveVdts(note, opts) {
   const stacked = o.noStack ? false : commitDoc(doc, { who: state.session.who, role: state.session.role, note: commitNote, force: true });
   const text = writeVdts(doc);
   const stem = defaultStem(doc, state.src.basename);
-  const filename = stem + ".vdts";
+  const filename = stem + ".vdts.html";
   try {
     let handle = null;
     // 開いているのが .vdts ならそのファイルへ上書き（初回だけ書き込み許可を聞かれる）。
@@ -3318,7 +3567,7 @@ async function saveVdts(note, opts) {
     // カットが変わっていたら（asNew）必ず保存ダイアログ＝新しいファイル
     if (!asNew && state.src.kind === "vdts" && await ensureWritable(state.src.handle)) handle = state.src.handle;
     else if (window.showSaveFilePicker) {
-      const opt = { suggestedName: filename, types: [{ description: "VDTS", accept: { "application/octet-stream": [".vdts"] } }] };
+      const opt = { suggestedName: filename, types: [{ description: "VDTS（絵入り HTML）", accept: { "text/html": [".html"] } }] };
       const si = startInHandle(); if (si) opt.startIn = si;
       handle = await window.showSaveFilePicker(opt);
     }
