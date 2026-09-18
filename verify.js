@@ -189,6 +189,19 @@
   check("台詞の無い xdts は空", api.parseAuxBlocks(api.writeXdts({ duration: 4, layers: [{ name: "A", cells: [E,E,E,E] }] })).dialogue.length === 0);
   const dg = api.dougaFromGenga([{ name: "A", cells: ["1","1",T,"1","2",E,E,"3"] }]);
   check("動画欄: 原画と中割に通し番号、ホールド継続、空は×", dg[0].cells.join() === "1,1,2,2,3,×,×,4");
+  check("動画欄: _BG は挟み列ではない（普通に番号を振る）", api.dougaFromGenga([{ name: "_BG", cells: ["1","1","2"] }])[0].cells.join() === "1,1,2");
+  check("動画欄: _Book も挟み列（大小を問わない）", api.dougaFromGenga([{ name: "_Book", cells: ["1","1","2"] }])[0].cells.join() === "1,1,2" && api.dougaFromGenga([{ name: "_Book", cells: ["1",T,"2"] }])[0].cells.join() === "1,1,2");
+  const dgb = api.dougaFromGenga([{ name: "_BOOK", cells: ["1","1",T,"1",E,E,"2","2"] }]);
+  check("動画欄: 挟み列（_BOOK）は番号を振り直さず写す（中割は外す）", dgb[0].name === "_BOOK" && dgb[0].cells.join() === "1,1,1,1,×,×,2,2");
+  {
+    const sh = { duration: 8, layers: [{ name: "A", cells: ["1","1","2","2","3","3","3","3"] }, { name: "_BOOK", cells: ["1","1","1","1",E,E,E,E] }, { name: "B", cells: ["1","1","1","1","1","1","1","1"] }, { name: "_BG", cells: ["1","1","1","1","1","1","1","1"] }], douga: [], dialogue: [], camera: [], ink: [] };
+    const svg = api.renderSheetSvg(sh, []);
+    const opens = (svg.match(/<(rect|line|text|polygon|circle|polyline|tspan)\b/g) || []).length, closes = (svg.match(/<\/(text|tspan)>/g) || []).length + (svg.match(/\/>/g) || []).length;
+    check("SVG: 挟み列があっても要素が閉じている", opens === closes);
+    check("SVG: 挟み列の見出しは _ を外して縦に1字ずつ", ["B","O","K"].every(ch => svg.includes('font-size="9.5" fill="#1e2b33">' + ch + "</text>")) && !svg.includes(">_BOOK<"));
+    check("SVG: _BG は普通の列（見出しは名前のまま）", svg.includes(">_BG</text>"));
+    check("SVG: 挟み列は細い（原画3列で 30+14+30）", /width="(\d+)"/.exec(svg) && svg.includes('<rect x="66" y="'));
+  }
   const bl = [{ from: 1, to: 5, text: "a", lane: 0 }, { from: 10, to: 12, text: "b", lane: 0 }];
   api.setBlockEnd(bl, bl[0], 40, 100); check("ブロック伸長は隣の手前まで", bl[0].to === 9);
   api.setBlockStart(bl, bl[1], 3, 100); check("ブロック開始は前の隣の後ろまで", bl[1].from === 10);

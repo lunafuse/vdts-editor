@@ -306,6 +306,11 @@
   td.cell.drag-target { box-shadow: inset 0 3px 0 0 var(--blue); }
   td.cell.drag-target-below { box-shadow: inset 0 -3px 0 0 var(--blue); }
   td.cell.unknown { color: var(--pencil); }
+  /* 挟み列（_book）: セル列の間の細い帯。見出しは縦書き、横罫は6コマ・1秒のものだけ */
+  table.sheet thead th.ins { min-width: 14px; width: 14px; max-width: 14px; padding: 4px 0; font-size: 9.5px; line-height: 1.05; writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 0; vertical-align: bottom; }
+  td.cell.ins { width: 14px; min-width: 14px; max-width: 14px; font-size: 9.5px; overflow: visible; background: rgba(143,184,190,0.10); }
+  tr.r-norm td.cell.ins { border-bottom-color: transparent; }
+  td.cell.ins.tick { font-size: 9px; }
 
   .sheet-note { font-size: 11px; color: var(--pencil); margin-top: 8px; }
   .main-empty { color: var(--pencil); padding: 80px 0; text-align: center; line-height: 2; }
@@ -455,7 +460,7 @@
 
 <script>
 "use strict";
-const APP_BUILD = "2026-08-23";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
+const APP_BUILD = "2026-09-19";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
 /* 報告・要望の送り先（Google フォーム）。form が空なら欄そのものを出さない。
    entries は フォームの各設問の entry.xxxx（viewform の HTML から拾う）。送るのは 本文・APP_BUILD・ブラウザ名 の3つだけ */
 const FEEDBACK = { form: "https://docs.google.com/forms/d/e/1FAIpQLSfTP942oJysditNOCsHMGnQEP84iVfqjVZtzik2yx9Vj859aA", entries: { message: "entry.1813748369", build: "entry.1186825091", browser: "entry.1335203625" } };
@@ -524,6 +529,10 @@ function shakuToKoma(s) {
    UI・編集・照合はこのモデルだけを扱う */
 
 const EMPTY = "×";
+/* 挟み列: 名前が "_book" で始まる列（_book・_Book・_BOOK、大小は問わない）。紙のタイムシートでセル列の間の罫に書き込む BOOK と同じで、
+   細い列としてセル列の間に挟んで描く。_BG など他の "_" 列は普通の列のまま。データは普通の列のまま（書き出しにも名前ごとそのまま出す） */
+function isInsertLayer(name) { return /^_book/i.test(String(name == null ? "" : name).trim()); }
+function insertLayerLabel(name) { return String(name).trim().replace(/^_+/, "") || "_"; }
 
 function modelFromParsed(tt) {
   return {
@@ -1185,6 +1194,7 @@ function parseAuxBlocks(text) {
    原画の番号と中割○にそれぞれ通し番号、ホールドは継続、空は × */
 function dougaFromGenga(layers) {
   return (layers || []).map(L => {
+    if (isInsertLayer(L.name)) return { name: L.name, cells: L.cells.map((v, i) => isTick(v) ? heldBefore(L.cells, i) : v) };
     const out = new Array(L.cells.length).fill(EMPTY);
     let n = 0, cur = EMPTY;
     for (let i = 0; i < L.cells.length; i++) {
@@ -1501,12 +1511,14 @@ function renderSheetSvg(sheetIn, annotations) {
   const INK = "#1e2b33", PENCIL = "#6b7a84", RULE = "#b8d4d8", RULE_MID = "#8fb8be", SHU = "#c7361f", SLACK_BG = "#ececec", SLACK_FG = "#9aa3a8";
   const cols = []; let x = 0;
   cols.push({ kind: "koma", li: 0, x, w: G.komaW }); x += G.komaW;
-  sheet.layers.forEach((L, li) => { cols.push({ kind: "g", li, x, w: G.cellW }); x += G.cellW; });
+  const insW = 14, colW = L => isInsertLayer(L.name) ? insW : G.cellW;
+  sheet.layers.forEach((L, li) => { cols.push({ kind: "g", li, x, w: colW(L), ins: isInsertLayer(L.name) }); x += colW(L); });
   const sX = x; cols.push({ kind: "s", li: 0, x, w: G.auxW }); x += G.auxW; cols.push({ kind: "s", li: 1, x, w: G.auxW }); x += G.auxW;
-  const dX = x; sheet.douga.forEach((L, li) => { cols.push({ kind: "d", li, x, w: G.cellW }); x += G.cellW; });
+  const dX = x; sheet.douga.forEach((L, li) => { cols.push({ kind: "d", li, x, w: colW(L), ins: isInsertLayer(L.name) }); x += colW(L); });
   const cX = x; cols.push({ kind: "c", li: 0, x, w: G.auxW }); x += G.auxW; cols.push({ kind: "c", li: 1, x, w: G.auxW }); x += G.auxW;
   const laneX = x; cols.push({ kind: "lane", li: 0, x, w: G.laneW }); x += G.laneW;
-  const W = x, top = G.headH, bottom = top + D * G.cellH, H = bottom + 3, PAD = 44;   // PAD: 楔形のラベル（O.L 次カットへ など）が右にはみ出す分
+  const insLabelLen = Math.max(0, ...sheet.layers.concat(sheet.douga).filter(L => isInsertLayer(L.name)).map(L => Array.from(insertLayerLabel(L.name)).length));
+  const W = x, top = Math.max(G.headH, 24 + insLabelLen * 9), bottom = top + D * G.cellH, H = bottom + 3, PAD = 44;   // PAD: 楔形のラベル（O.L 次カットへ など）が右にはみ出す分
   const rowY = k => top + (k - 1) * G.cellH;
   const colOf = (kind, li) => cols.find(c => c.kind === kind && c.li === li);
   const r2 = n => Math.round(n * 100) / 100;
@@ -1514,21 +1526,24 @@ function renderSheetSvg(sheetIn, annotations) {
   out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W + PAD}" height="${H}" viewBox="0 0 ${W + PAD} ${H}" font-family="${MONO}" fill="${INK}">`);
   out.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#fdfdfb"/>`);
   for (let k = 1; k <= D; k++) if (isSlackFrame(sheet, k)) out.push(`<rect x="0" y="${rowY(k)}" width="${W}" height="${G.cellH}" fill="${SLACK_BG}"/>`);
-  if (hasDouga) out.push(`<rect x="${dX}" y="${top}" width="${sheet.douga.length * G.cellW}" height="${D * G.cellH}" fill="#f6f9fa" opacity="0.9"/>`);
+  if (hasDouga) out.push(`<rect x="${dX}" y="${top}" width="${cX - dX}" height="${D * G.cellH}" fill="#f6f9fa" opacity="0.9"/>`);
   // 見出し（欄のグループ名、列名）
   const groupText = (x0, w, t) => `<text x="${r2(x0 + w / 2)}" y="12" text-anchor="middle" font-size="10" fill="${PENCIL}" letter-spacing="1.4" font-family="${SANS}">${svgEsc(t)}</text>`;
-  out.push(groupText(G.komaW, sheet.layers.length * G.cellW, "原画"), groupText(sX, 2 * G.auxW, "台詞"));
-  if (hasDouga) out.push(groupText(dX, sheet.douga.length * G.cellW, "動画"));
+  out.push(groupText(G.komaW, sX - G.komaW, "原画"), groupText(sX, 2 * G.auxW, "台詞"));
+  if (hasDouga) out.push(groupText(dX, cX - dX, "動画"));
   out.push(groupText(cX, 2 * G.auxW, "カメラ"));
   out.push(`<line x1="0" y1="18" x2="${W}" y2="18" stroke="${RULE_MID}" stroke-width="1"/>`);
+  const insHead = (c, t) => Array.from(t).map((ch, i, a) => `<text x="${r2(c.x + c.w / 2)}" y="${top - 6 - (a.length - 1 - i) * 9}" text-anchor="middle" font-size="9.5" fill="${INK}">${svgEsc(ch)}</text>`).join("");
+  cols.filter(c => c.ins).forEach(c => out.push(`<rect x="${c.x}" y="${top}" width="${c.w}" height="${D * G.cellH}" fill="#8fb8be" opacity="0.10"/>`));
   const headText = (c, t, color) => `<text x="${r2(c.x + c.w / 2)}" y="${top - 9}" text-anchor="middle" font-size="12.5" fill="${color || INK}">${svgEsc(t)}</text>`;
   out.push(headText(colOf("koma", 0), "コマ"));
-  sheet.layers.forEach((L, li) => out.push(headText(colOf("g", li), L.name)));
+  sheet.layers.forEach((L, li) => out.push(isInsertLayer(L.name) ? insHead(colOf("g", li), insertLayerLabel(L.name)) : headText(colOf("g", li), L.name)));
   out.push(headText(colOf("s", 0), "S1", PENCIL), headText(colOf("s", 1), "S2", PENCIL));
-  sheet.douga.forEach((L, li) => out.push(headText(colOf("d", li), L.name)));
+  sheet.douga.forEach((L, li) => out.push(isInsertLayer(L.name) ? insHead(colOf("d", li), insertLayerLabel(L.name)) : headText(colOf("d", li), L.name)));
   out.push(headText(colOf("c", 0), "CAM1", PENCIL), headText(colOf("c", 1), "CAM2", PENCIL));
   // 横罫: 台詞・カメラ欄は引かない（開けた欄）。ページ罫と総尺の終わりは全幅
-  const hseg = (y, color, w, dash) => [[0, sX], [dX, cX], [laneX, W]].forEach(([a, b]) => { if (b > a) out.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="${color}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`); });
+  const splitIns = ranges => ranges.flatMap(([a, b]) => { const segs = []; let s0 = a; cols.filter(c => c.ins && c.x >= a && c.x < b).forEach(c => { segs.push([s0, c.x]); s0 = c.x + c.w; }); segs.push([s0, b]); return segs; });
+  const hseg = (y, color, w, dash, skipIns) => (skipIns ? splitIns([[0, sX], [dX, cX], [laneX, W]]) : [[0, sX], [dX, cX], [laneX, W]]).forEach(([a, b]) => { if (b > a) out.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="${color}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`); });
   for (let k = 1; k <= D; k++) {
     const dk = displayKoma(sheet, k), y = rowY(k) + G.cellH;
     const page = dk > 0 && dk % PAGE_FRAMES === 0, sec = dk > 0 && dk % 24 === 0, six = dk > 0 && dk % 6 === 0;
@@ -1536,7 +1551,7 @@ function renderSheetSvg(sheetIn, annotations) {
     if (page) { out.push(`<line x1="0" y1="${y - 1.5}" x2="${W}" y2="${y - 1.5}" stroke="${INK}" stroke-width="1"/><line x1="0" y1="${y + 1.5}" x2="${W}" y2="${y + 1.5}" stroke="${INK}" stroke-width="1"/>`); }
     else if (sec) hseg(y, INK, 2);
     else if (six) hseg(y, RULE_MID, 1);
-    else hseg(y, RULE, 1);
+    else hseg(y, RULE, 1, null, true);   // 挟み列には通常の横罫を引かない
   }
   // 縦罫: マス列は水色、台詞・カメラ欄は左端だけ中罫色
   cols.forEach(c => {
@@ -1552,14 +1567,14 @@ function renderSheetSvg(sheetIn, annotations) {
     const c = colOf(kind, li), cells = L.cells; if (!c || !cells.some(v => v !== EMPTY)) return;
     let held = EMPTY;
     for (let i = 0; i < cells.length; i++) {
-      const v = cells[i], k = i + 1, y = rowY(k), cx = r2(c.x + c.w / 2), slack = isSlackFrame(sheet, k);
+      const v = cells[i], k = i + 1, y = rowY(k), cx = r2(c.x + c.w / 2), slack = isSlackFrame(sheet, k), fs = c.ins ? "9.5" : "12.5";
       const tick = isTick(v), empty = !tick && isEmptyCell(v), change = !tick && (i === 0 || v !== held);
       const lineColor = slack ? SLACK_FG : (empty ? PENCIL : INK);
       if (tick) {
         out.push(`<text x="${cx}" y="${r2(y + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="11">${v === "SYMBOL_TICK_2" ? "●" : "○"}</text>`);
         out.push(`<line x1="${cx}" y1="${r2(y + G.cellH * 0.6)}" x2="${cx}" y2="${y + G.cellH}" stroke="${lineColor}" stroke-width="1" opacity="0.55"/>`);
       } else if (change) {
-        out.push(`<text x="${cx}" y="${r2(y + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="12.5" fill="${empty ? PENCIL : (slack ? SLACK_FG : INK)}">${svgEsc(displayCell(v))}</text>`);
+        out.push(`<text x="${cx}" y="${r2(y + G.cellH / 2)}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${empty ? PENCIL : (slack ? SLACK_FG : INK)}">${svgEsc(displayCell(v))}</text>`);
       } else {
         out.push(`<line x1="${cx}" y1="${y}" x2="${cx}" y2="${y + G.cellH}" stroke="${lineColor}" stroke-width="1" opacity="0.55"${empty ? ' stroke-dasharray="3 2"' : ""}/>`);
       }
@@ -2400,9 +2415,12 @@ function renderSheetDom() {
 function buildSheetDom(box, model) {
   const D = totalFrames(model);                        // 行は総尺（頭余尺＋本尺＋尻余尺）。余尺は薄いグレー
   const hasDouga = model.douga.length > 0;
-  const gHeads = model.layers.map((L, li) => `<th class="layer-name" data-kind="g" data-li="${li}" title="タップで改名">${esc(L.name)}</th>`).join("");
+  const headOf = (L, li, kind, extra, title) => isInsertLayer(L.name)
+    ? `<th class="layer-name ins${extra}" data-kind="${kind}" data-li="${li}" title="${esc(L.name)}（挟み列）— ${title}">${esc(insertLayerLabel(L.name))}</th>`
+    : `<th class="layer-name${extra}" data-kind="${kind}" data-li="${li}" title="${title}">${esc(L.name)}</th>`;
+  const gHeads = model.layers.map((L, li) => headOf(L, li, "g", "", "タップで改名")).join("");
   const sHeads = `<th class="aux-head">S1</th><th class="aux-head">S2</th>`;
-  const dHeads = hasDouga ? model.douga.map((L, li) => `<th class="layer-name douga-head" data-kind="d" data-li="${li}" title="動画欄">${esc(L.name)}</th>`).join("") : "";
+  const dHeads = hasDouga ? model.douga.map((L, li) => headOf(L, li, "d", " douga-head", "動画欄")).join("") : "";
   const cHeads = `<th class="aux-head">CAM1</th><th class="aux-head">CAM2</th>`;
   const groupRow = `<tr class="group-row"><th></th><th colspan="${model.layers.length}">原画</th><th colspan="2">台詞</th>${hasDouga ? `<th colspan="${model.douga.length}">動画</th>` : ""}<th colspan="2">カメラ</th><th></th><th></th></tr>`;
   let rows = "";
@@ -2410,9 +2428,9 @@ function buildSheetDom(box, model) {
     const dk = displayKoma(model, k);
     const rowCls = ((k === D) ? "r-last " : "") + (isSlackFrame(model, k) ? "r-slack " : "") + ((dk > 0 && dk % PAGE_FRAMES === 0) ? "r-page " : "") + ((dk > 0 && dk % 24 === 0) ? "r-sec" : (dk > 0 && dk % 6 === 0) ? "r-six" : "r-norm");
     let cells = "";
-    for (let li = 0; li < model.layers.length; li++) cells += `<td class="cell" data-kind="g" data-li="${li}" data-k="${k}"></td>`;
+    for (let li = 0; li < model.layers.length; li++) cells += `<td class="cell${isInsertLayer(model.layers[li].name) ? " ins" : ""}" data-kind="g" data-li="${li}" data-k="${k}"></td>`;
     cells += `<td class="cell aux" data-kind="s" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="s" data-li="1" data-k="${k}"></td>`;
-    if (hasDouga) for (let li = 0; li < model.douga.length; li++) cells += `<td class="cell douga" data-kind="d" data-li="${li}" data-k="${k}"></td>`;
+    if (hasDouga) for (let li = 0; li < model.douga.length; li++) cells += `<td class="cell douga${isInsertLayer(model.douga[li].name) ? " ins" : ""}" data-kind="d" data-li="${li}" data-k="${k}"></td>`;
     cells += `<td class="cell aux" data-kind="c" data-li="0" data-k="${k}"></td><td class="cell aux" data-kind="c" data-li="1" data-k="${k}"></td>`;
     rows += `<tr class="${rowCls}"><td class="koma-no" data-k="${k}" title="タップで修正指示・申し送りを書く">${dk}</td>${cells}<td class="memo-lane" data-k="${k}"></td></tr>`;
   }
@@ -2443,7 +2461,7 @@ function paintCellsColumn(kind, li, L, diffSet) {
     const tick = isTick(v);
     const change = !tick && ((i === 0 && hasAny) || v !== held);   // 先頭は書く（列に何かあるとき。全部空なら何も書かない）
     const empty = !tick && isEmptyCell(v);
-    let cls = "cell" + (kind === "d" ? " douga" : "");
+    let cls = "cell" + (kind === "d" ? " douga" : "") + (isInsertLayer(L.name) ? " ins" : "");
     let html;
     if (tick) { cls += " tick"; html = (v === "SYMBOL_TICK_2" ? "●" : "○") + '<span class="vline"></span>'; }
     else if (change) { cls += empty ? " empty" : ""; if (/^SYMBOL_/.test(v)) cls += " unknown"; html = esc(displayCell(v)); }
@@ -2557,7 +2575,10 @@ function paintSheet() {
   });
   dom.table.querySelectorAll("th.layer-name").forEach(th => {
     const arr = th.dataset.kind === "d" ? model.douga : model.layers;
-    const L = arr[Number(th.dataset.li)]; if (L && th.textContent !== L.name) th.textContent = L.name;
+    const L = arr[Number(th.dataset.li)]; if (!L) return;
+    const ins = isInsertLayer(L.name), label = ins ? insertLayerLabel(L.name) : L.name;
+    if (th.textContent !== label) th.textContent = label;
+    th.classList.toggle("ins", ins);
   });
   const dh = dom.table.querySelector(".dur-handle");
   if (dh && !(gest && gest.mode === "dur")) dh.textContent = `⇕ 尺 ${komaToShaku(model.duration)}（${model.duration}）${(model.slackHead || model.slack) ? "　余尺 頭 " + (model.slackHead || 0) + "・尻 " + (model.slack || 0) : ""} — ここを上下にドラッグ`;
