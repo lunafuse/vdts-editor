@@ -21,7 +21,7 @@
     " modelFromParsed, modelFingerprint, sheetFingerprint, writeXdts, sha256Hex," +
     " setLabelAt, toggleTickAt, moveChangePoint, isChangePoint, setDuration, ttFromModel," +
     " newDoc, commitDoc, diffSheets, diffIsEmpty, writeVdts, writeVdtsLegacy, parseVdts, renderSheetSvg, renderVdtsHtml, writeTdts, parseAnyTimesheet, EMPTY, TICK," +
-    " docFingerprint, framesToBlocks, parseAuxBlocks, dougaFromGenga, setBlockEnd, setBlockStart, moveBlock, freeSpanAt, parseCameraText, cameraDisplayText, encodeSpeaker, decodeSpeaker, cameraFromTdtsValue, insertFrames, deleteFrames, layersToText, textToLayers, dialogueToText, textToDialogue, cameraToText, textToCamera, splitDtsEpisode, joinDtsEpisode, setSlack, setSlackHead, totalFrames, displayKoma, fmtEpisode, fmtCut, cutKey, shiftInk };")();
+    " docFingerprint, framesToBlocks, parseAuxBlocks, dougaFromGenga, setBlockEnd, setBlockStart, moveBlock, freeSpanAt, parseCameraText, cameraDisplayText, encodeSpeaker, decodeSpeaker, cameraFromTdtsValue, insertFrames, deleteFrames, layersToText, textToLayers, dialogueToText, textToDialogue, cameraToText, textToCamera, splitDtsEpisode, joinDtsEpisode, setSlack, setSlackHead, totalFrames, displayKoma, fmtEpisode, fmtCut, cutKey, shiftInk, inspectForAe };")();
 
 
   // --- SHA-256 既知ベクタ ---
@@ -219,11 +219,20 @@
     && api.cutKey({ cut: { title: "abc", episode: "17", scene: "", cut: "178" } }) !== api.cutKey({ cut: { title: "abc", episode: "18", scene: "", cut: "178" } }));
   check("表記: 話数 00・カット 000（数字だけゼロ埋め）", api.fmtEpisode("7") === "07" && api.fmtEpisode("17") === "17" && api.fmtCut("8") === "008" && api.fmtCut("178") === "178" && api.fmtCut("A12") === "A12" && api.joinDtsEpisode({ title: "abc", episode: "7" }) === "abc#07");
   check("DTS 話数欄 abc#17 → 作品名 abc・話数 17", JSON.stringify(api.splitDtsEpisode("abc#17")) === JSON.stringify({ title: "abc", episode: "17" }) && api.joinDtsEpisode({ title: "abc", episode: "17" }) === "abc#17" && api.splitDtsEpisode("17").episode === "17");
-  check("未知のコードは数字のまま", api.cameraFromTdtsValue("7").text === "7" && api.cameraFromTdtsValue("7").kind === "");
+  check("表に無いコードは数字のまま", api.cameraFromTdtsValue("99").text === "99" && api.cameraFromTdtsValue("99").kind === "");
+  check("カメラコード表: 0=F.I・8=T.U・48=FIX は種類、5 は名前を自由文", api.cameraFromTdtsValue("0").kind === "F.I" && api.cameraFromTdtsValue("8").kind === "T.U" && api.cameraFromTdtsValue("48").kind === "FIX"
+    && api.cameraFromTdtsValue("5").kind === "" && api.cameraFromTdtsValue("5").text === "CAM SHAKE S" && api.cameraFromTdtsValue("5").tdtsCode === "5");
   const vd2 = api.newDoc(api.modelFromParsed(api.parseXdts(read("samples/sample_01_001.xdts"))[0]), {});
   vd2.sheet.camera.push({ from: 1, to: 10, lane: 0, kind: "PAN", fromLabel: "", toLabel: "", text: "" });
   const tj2 = JSON.parse(api.writeTdts(vd2, {}).split("\n").slice(1).join("\n"));
   check("PAN は tdts へ \"12\" で戻る", tj2.timeSheets[0].timeTables[0].fields[2].tracks[0].frames[0].data[0].values[0] === "12");
+  {
+    const vd3 = api.newDoc({ duration: 20, layers: [{ name: "A", cells: new Array(20).fill("1") }] }, {});
+    vd3.sheet.camera.push({ from: 1, to: 5, lane: 0, kind: "T.U", fromLabel: "", toLabel: "", text: "" }, Object.assign({ from: 7, to: 9, lane: 0 }, api.cameraFromTdtsValue("5")),
+      { from: 11, to: 12, lane: 0, kind: "", fromLabel: "", toLabel: "", text: "99" }, { from: 14, to: 15, lane: 0, kind: "PAN", fromLabel: "A", toLabel: "B", text: "" });
+    const fr3 = JSON.parse(api.writeTdts(vd3, {}).split("\n").slice(1).join("\n")).timeSheets[0].timeTables[0].fields[2].tracks[0].frames.filter(f => f.data[0].values[0] !== "SYMBOL_HYPHEN").map(f => f.data[0].values[0]);
+    check("tdts へのカメラ: T.U→\"8\"・CAM SHAKE S→\"5\"・表に無い 99 はそのまま・フレーム名付きは文", JSON.stringify(fr3) === JSON.stringify(["8", "5", "99", "A PAN B"]));
+  }
   // 挿入・削除
   const sh = { duration: 8, layers: [{ name: "A", cells: ["1","1","1","2","2",E,E,"3"] }], douga: [], dialogue: [{ from: 2, to: 6, speaker: "x", kind: "", text: "t", lane: 0 }], camera: [{ from: 7, to: 8, kind: "FIX", fromLabel: "", toLabel: "", text: "", lane: 0 }] };
   api.insertFrames(sh, 4, 2);
@@ -283,6 +292,37 @@
   check("カメラ → 記法: 0+01 | 1+00 | A | PAN | B", api.cameraToText(cm) === "0+01 | 1+00 | A | PAN | B");
   const cm2 = api.textToCamera(api.cameraToText(cm), 100);
   check("カメラ 記法 往復", cm2.length === 1 && cm2[0].kind === "PAN" && cm2[0].fromLabel === "A" && cm2[0].toLabel === "B");
+
+  // 撮影へ書き出し（AE の SUNRISE MOON TimeSheet 1.1.0 向け）
+  out("\n=== 撮影へ書き出し（AE TimeSheet） ===");
+  {
+    const sd0 = api.parseVdts(read("samples/sample_01_001.vdts.html"));
+    const sd = { sheet: Object.assign({}, sd0.sheet, { douga: sd0.sheet.douga.length ? sd0.sheet.douga : api.dougaFromGenga(sd0.sheet.layers) }) };   // 公開版のサンプルは動画欄が無い
+    check("サンプルの動画欄は AE の検査で警告なし", api.inspectForAe(sd.sheet).length === 0);
+    const ae = api.writeXdts(sd.sheet, { source: "douga" });
+    const aeLines = ae.split("\n"), aeJ = JSON.parse(aeLines.slice(1).join(""));
+    check("AE: 1行目が完全一致（CR・BOM 無し）", aeLines[0] === "exchangeDigitalTimeSheet Save Data");
+    check("AE: トップレベルに timeTables が1つ", Array.isArray(aeJ.timeTables) && aeJ.timeTables.length === 1);
+    const cellHead = aeJ.timeTables[0].timeTableHeaders.find(h => h.fieldId === 0);
+    check("AE: 列名は動画欄の列名", JSON.stringify(cellHead.names) === JSON.stringify(sd.sheet.douga.map(L => L.name)));
+    const cellVals = aeJ.timeTables[0].fields.find(f => f.fieldId === 0).tracks.flatMap(t => t.frames.flatMap(fr => fr.data[0].values));
+    check("AE: セル欄の値は正の整数か SYMBOL_NULL_CELL だけ", cellVals.every(v => v === "SYMBOL_NULL_CELL" || /^[1-9]\d*$/.test(v)));
+    check("AE: 動画欄が無ければ1件だけ返す", (r => r.length === 1 && r[0].includes("動画欄がありません"))(api.inspectForAe({ duration: 4, layers: [], douga: [] })));
+    const bad = { duration: 10, slackHead: 0, slack: 0, layers: [], douga: [
+      { name: "A", cells: ["1", "1", "3′", "3′", "A3", "0", "SYMBOL_TICK_1", "5", "5", E] },
+      { name: "a", cells: new Array(10).fill(E) },
+      { name: " B", cells: new Array(10).fill("1") },
+      { name: "Ｃ", cells: new Array(10).fill("2") },
+      { name: "", cells: new Array(10).fill(E) },
+    ] };
+    const iss = api.inspectForAe(bad), has = (...ws) => iss.some(s => ws.every(w => s.includes(w)));
+    check("AE 検査: 正の整数でない番号（3′・A3・0）とコマ", has("列「A」", "3′（3コマ目）", "A3（5コマ目）", "0（6コマ目）"));
+    check("AE 検査: 中割の印", has("列「A」", "中割の印", "7コマ目"));
+    check("AE 検査: 番号の抜け", has("列「A」", "番号が抜けている 2, 3, 4") && has("列「Ｃ」", "番号が抜けている 1"));
+    check("AE 検査: 名前の前後の空白・全角英数・空", has("列「 B」", "空白") && has("列「Ｃ」", "全角") && has("5列目", "名前が空"));
+    check("AE 検査: 大文字小文字だけ違う列名の重なり", has("「A」「a」", "重なる"));
+    check("AE 検査: 頭余尺のコマはマイナスで示す", api.inspectForAe({ duration: 4, slackHead: 2, slack: 0, layers: [], douga: [{ name: "A", cells: ["x2", "1", "1", "1", "1", "1"] }] }).some(s => s.includes("x2（-2コマ目）")));
+  }
 
   out(fail ? "\nNG " + fail + "件" : "\n全項目 OK");
   if (isNode && fail) process.exit(1);

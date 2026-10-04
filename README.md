@@ -16,6 +16,7 @@ Open `vdts-editor.html` in Chrome or Edge (saving uses the File System Access AP
 - **上書き保存** で版が1つ重なる（誰が・どの役で・ひとこと）。**版 N** で過去の版を表示し、その内容に戻せる
 - 作品名・話数・シーン・カットを書き換えると **新規保存** になり、元のファイルには上書きせず新しい `.vdts.html` に保存する
 - **xdts 書き出し** / **tdts 書き出し**、**取り込み**（他のシートの原画欄で差し替え）
+- **撮影へ書き出し** — 撮影の After Effects スクリプト（SUNRISE MOON の TimeSheet）が読む xdts を動画欄で書き出す。数字でない番号・中割の印・番号の抜け・列名の重なりなど、AE で崩れる所があれば書き出す前に見せる（スクリプトは配布元から入手。法人で使うときの作者からのお願いが配布物に書かれている）
 - 詳しくは画面左の「使い方」
 - 保存ファイルの見え方の例: [samples/sample_01_001.vdts.html](https://lunafuse.github.io/vdts-editor/samples/sample_01_001.vdts.html)（ブラウザで開くだけ。JavaScript 無し）
 
@@ -27,6 +28,7 @@ Use the "報告・要望" box at the bottom left (Google Form). Only your messag
 
 ## 更新履歴 / Changelog
 
+- 2026-10-04 — 「撮影へ書き出し」を追加。AE スクリプト（SUNRISE MOON の TimeSheet）向けに動画欄の xdts を書き、AE で崩れる番号や列名を書き出す前に知らせる。tdts の「version 5 と名乗らせる」選択肢は、このスクリプトが読めない形だったので外した。東映DTSのカメラ欄の指示コードを72件読めるように
 - 2026-09-19 — 名前が `_book` で始まる列（`_BOOK`・`_Book`）を、紙と同じくセル列の間に挟む細い列として描く。データと書き出しは普通の列のまま。`_BG` などは普通の列
 - 2026-08-23 — 保存ファイルを絵入りの HTML（`.vdts.html`）に。ダブルクリックでブラウザにシートが出る（JavaScript 無し）。旧 `.vdts` も読める。列名の長押しで A下（左）／A上（右）を挿入
 - 2026-08-19 — 公開。カットを書き換えたら上書きせず新規保存。版の閲覧中に触ったら「今に戻る」の出口を出す。文言から「朱」をやめ「修正指示・申し送り」に。報告・要望の欄

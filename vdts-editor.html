@@ -434,6 +434,7 @@
       <li>尺編集 — 青いフレーム線から線へドラッグして範囲を選び、切る／伸ばす</li>
       <li>余尺 — 頭と尻にコマを足す。足した行は薄いグレー。尺の表示は総尺</li>
       <li>動画欄を更新 — 原画の番号と中割から動画番号を振り直す。動画欄のマスは原画欄と同じ操作で直せる</li>
+      <li>撮影へ書き出し — 撮影（AE の SUNRISE MOON TimeSheet）が読む xdts を動画欄で書き出す。数字でない番号・中割の印・番号の抜け・列名の重なりなど、AE で崩れる所があれば書き出す前に見せる（直すのは手で）。素材は 1 から始まる連番（N 枚目がセル N）で、AE のレイヤー名は列名と同じにする</li>
       <li>コマ番号をタップ — 修正指示・申し送り・要確認を書く（列と種類はチップで選び、範囲は −／＋で決める）</li>
       <li>上段のメモ欄 — 描画領域。ペンで引けば線、タップすると文字を書く。右上で色（黒／赤／青／緑）・太さ（細／太）、「消」で線をなぞって消す。下端をドラッグで高さを変える。線は版と一緒に残る</li>
       <li>上書き保存 — 名前・役・ひとことを付けて版を1つ重ねる。版 N — 過去の版を表示する</li>
@@ -460,7 +461,7 @@
 
 <script>
 "use strict";
-const APP_BUILD = "2026-09-19";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
+const APP_BUILD = "2026-10-04";   // 公開時に publish.py が日付に置き換える。報告・要望に添える
 /* 報告・要望の送り先（Google フォーム）。form が空なら欄そのものを出さない。
    entries は フォームの各設問の entry.xxxx（viewform の HTML から拾う）。送るのは 本文・APP_BUILD・ブラウザ名 の3つだけ */
 const FEEDBACK = { form: "https://docs.google.com/forms/d/e/1FAIpQLSfTP942oJysditNOCsHMGnQEP84iVfqjVZtzik2yx9Vj859aA", entries: { message: "entry.1813748369", build: "entry.1186825091", browser: "entry.1335203625" } };
@@ -660,21 +661,36 @@ function cameraDisplayText(b) {
   return [b.fromLabel || "", mid, b.toLabel || ""].filter(Boolean).join(" ").trim();
 }
 /* 東映DTSのカメラ欄は「指示ウィンドウ」の選択をコード（数字）で保存し、紙には PAN 等の文字＋▼線▲で描く。
-   コード表は公開されていない。実物の .tdts（version 7。値 "12" が DTS の PNG 出力では PAN）で確認できたものだけ載せ、未知は生の値を自由文として保つ */
-const TDTS_CAMERA_CODES = { "12": "PAN" };
-const TDTS_CAMERA_CODE_OF = Object.fromEntries(Object.entries(TDTS_CAMERA_CODES).map(([k, v]) => [v, k]));
+   コード表は公開されていない。この72件は AE スクリプト SUNRISE MOON TimeSheet 1.1.0 のソースにある表。
+   東映DTSの実物で確認できたのは 12=PAN だけ。実物の .tdts（version 7。値 "12" が DTS の PNG 出力では PAN）。表に無いコードは生の値を自由文として保つ */
+const TDTS_CAMERA_CODES = {
+  0: "FI", 1: "FO", 2: "WI", 3: "WO", 4: "OL", 5: "CAM SHAKE S", 6: "CAM SHAKE M", 7: "CAM SHAKE L", 8: "TU", 9: "TB",
+  10: "ZI", 11: "ZO", 12: "PAN", 13: "PAN UP", 14: "PAN DOWN", 15: "TILT", 16: "FOLLOW", 17: "CU", 18: "CD", 19: "DOLLY",
+  20: "MULTI", 21: "Fairing", 22: "SL", 23: "Strobo", 24: "Rotate TU", 25: "Rotate TB", 26: "Handy S", 27: "Handy M", 28: "Handy L", 29: "BL K",
+  30: "W K", 31: "SUBLINA", 32: "TFlash", 33: "HI CON", 34: "Rack Focus", 35: "OverEX", 36: "UnderEX", 37: "ParsSL", 38: "JumpSL", 39: "DF1",
+  40: "DF2", 41: "DF3", 42: "Fog1", 43: "Fog2", 44: "Fog3", 45: "BOKEH S", 46: "BOKEH M", 47: "BOKEH L", 48: "FIX", 49: "PAN TU",
+  50: "PAN TB", 51: "FollowPan", 52: "Rolling", 53: "Q TU", 54: "Q TB", 55: "Focus IN", 56: "Focus Out", 57: "WaveGlass S", 58: "WaveGlass M", 59: "WaveGlass L",
+  60: "Wipe", 61: "IrisIN", 62: "IrisOut", 63: "Insert", 64: "CutIN", 65: "Blur1", 66: "Blur2", 67: "Blur3", 68: "WipeIN", 69: "Bar",
+  70: "Strobo1", 71: "Strobo2",
+};
+/* 名前の照合キー: 全角半角・大小・点・空白を無視（"T.U" も "TU" も同じ） */
+function cameraNameKey(s) { return String(s || "").normalize("NFKC").replace(/[.\s_\-・]+/g, "").toUpperCase(); }
+const TDTS_CAMERA_CODE_OF = Object.fromEntries(Object.entries(TDTS_CAMERA_CODES).map(([k, v]) => [cameraNameKey(v), k]));
 function cameraFromTdtsValue(str) {
   const raw = String(str || "").trim();
-  if (/^\d+$/.test(raw) && TDTS_CAMERA_CODES[raw]) return { kind: TDTS_CAMERA_CODES[raw], fromLabel: "", toLabel: "", text: "", tdtsCode: raw };
-  if (/^\d+$/.test(raw)) return { kind: "", fromLabel: "", toLabel: "", text: raw, tdtsCode: raw };   // 未知のコード: 数字のまま持つ
+  const name = /^\d+$/.test(raw) ? TDTS_CAMERA_CODES[Number(raw)] : undefined;
+  if (name) {
+    const kind = normalizeCameraKind(name);   // FI→F.I、TU→T.U など VDTS の語彙にあるものは種類に、他は名前を自由文に
+    return kind ? { kind, fromLabel: "", toLabel: "", text: "", tdtsCode: raw } : { kind: "", fromLabel: "", toLabel: "", text: name, tdtsCode: raw };
+  }
+  if (/^\d+$/.test(raw)) return { kind: "", fromLabel: "", toLabel: "", text: raw, tdtsCode: raw };   // 表に無いコード: 数字のまま持つ
   return parseCameraText(raw);
 }
 function cameraValues(b, forTdts) {
-  if (forTdts) {
-    if (b.tdtsCode && (!b.kind || TDTS_CAMERA_CODES[b.tdtsCode] === b.kind) && !b.text && !b.fromLabel && !b.toLabel) return [b.tdtsCode];
-    if (b.kind && TDTS_CAMERA_CODE_OF[b.kind] && !b.text && !b.fromLabel && !b.toLabel) return [TDTS_CAMERA_CODE_OF[b.kind]];
-  }
-  const tx = cameraDisplayText(b); return tx ? [tx] : null;
+  const tx = cameraDisplayText(b);
+  // tdts へは、前後のフレーム名が無く、文が表の名前そのもの（"PAN"、"T.U"、"CAM SHAKE S" など）ならコードで書く
+  if (forTdts && !b.fromLabel && !b.toLabel && TDTS_CAMERA_CODE_OF[cameraNameKey(tx)]) return [TDTS_CAMERA_CODE_OF[cameraNameKey(tx)]];
+  return tx ? [tx] : null;
 }
 function auxTracks(model, fieldId, withColor) {
   const D = (model.slackHead || 0) + model.duration + (model.slack || 0);
@@ -832,6 +848,49 @@ function inspect(parsed, ledgerEntry) {
 
   if (parsed.length > 1) checks.push({ level: "warn", text: `タイムテーブルが${parsed.length}本あります（先頭のみ照合）` });
   return { checks, ng, pending: !ledgerEntry };
+}
+
+/* 撮影（AE の SUNRISE MOON TimeSheet）に動画欄を渡す前の検査。警告の文を返すだけで、直すのは人。
+   スクリプトの読み方: セル N ＝素材の連番の N 枚目、数字でない値は空セル扱い、中割記号は読み飛ばす、
+   列名とレイヤー名は大文字小文字を区別せず完全一致（全角半角・空白は区別）、同じ名前の列は後の列が上書き */
+function inspectForAe(sheet) {
+  const layers = (sheet && sheet.douga) || [];
+  if (!layers.length) return ["動画欄がありません（「動画欄を更新」で原画欄から作る）"];
+  const out = [];
+  const koma = k => displayKoma(sheet, k + 1) + "コマ目";
+  const groups = {};
+  layers.forEach((L, li) => {
+    const name = String(L.name == null ? "" : L.name);
+    const label = name.trim() ? `列「${name}」` : `${li + 1}列目`;
+    if (!name.trim()) out.push(`${label}: 名前が空（AE のレイヤーに当たらない）`);
+    else {
+      if (/^\s|\s$/.test(name)) out.push(`${label}: 名前の前後に空白がある（AE のレイヤー名と空白まで同じでないと当たらない）`);
+      if (/[Ａ-Ｚａ-ｚ０-９＿]/.test(name)) out.push(`${label}: 名前に全角の英数字がある（AE のレイヤー名と全角半角まで同じでないと当たらない）`);
+      (groups[name.toLowerCase()] = groups[name.toLowerCase()] || []).push(name);
+    }
+    const bad = [], ticks = [], nums = new Set();
+    L.cells.forEach((v, k) => {
+      if (k > 0 && v === L.cells[k - 1] && !isTick(v)) return;   // ホールドは変化点で1回だけ見る
+      if (isEmptyCell(v)) return;
+      if (isTick(v)) { ticks.push(k); return; }
+      const n = Number(v);
+      if (String(v).trim() !== "" && Number.isInteger(n) && n >= 1) nums.add(n);
+      else bad.push(`${v}（${koma(k)}）`);
+    });
+    if (bad.length) {
+      const zero = bad.some(s => /^0+（/.test(s));
+      out.push(`${label}: 正の整数でない番号 ${bad.slice(0, 6).join("・")}${bad.length > 6 ? ` ほか${bad.length - 6}か所` : ""}。AE では${zero ? "数字でないものは" : ""}そのコマから空セルになる${zero ? "。0 は素材の先頭より前を指す" : ""}`);
+    }
+    if (ticks.length) out.push(`${label}: 中割の印 ○ が${ticks.length}か所（最初は${koma(ticks[0])}）。AE では無視され、前の絵が出たままになる`);
+    if (nums.size) {
+      const max = Math.max(...nums), missing = [];
+      for (let i = 1; i <= max; i++) if (!nums.has(i)) missing.push(i);
+      if (missing.length) out.push(`${label}: 番号が抜けている ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? ` ほか${missing.length - 10}個` : ""}（1〜${max}。素材の連番の N 枚目がセル N になるので、素材もこの番号で並べる）`);
+    }
+  });
+  Object.values(groups).filter(g => g.length > 1).forEach(g =>
+    out.push(`列名 ${g.map(n => `「${n}」`).join("")} が重なる（AE は大文字小文字を区別しないので、後の列で上書きされる）`));
+  return out;
 }
 
 /* ========= 編集操作（純関数・モデルのみを触る） =========
@@ -1480,7 +1539,7 @@ function writeTdts(doc, opts) {
       timeSheets.push({ header, timeTables: [tdtsTimeTable(h.sheet, "sheet" + (i + 2), h.who, [h.role, h.at, h.note].filter(Boolean).join(" "), o)] });
     });
   }
-  return "toeiDigitalTimeSheet Save Data\n" + JSON.stringify({ timeSheets, version: o.version || 7 }, null, 2);
+  return "toeiDigitalTimeSheet Save Data\n" + JSON.stringify({ timeSheets, version: 7 }, null, 2);
 }
 
 /* ========= 静的描画（SVG）と HTML 容器: 保存ファイル（.vdts.html）は「開けば絵が見える」正本。JavaScript 無しで表示できる。
@@ -2258,6 +2317,7 @@ function renderTools() {
     <button id="tSave" title="${cutChangedSinceOpen() ? "作品名・話数・シーン・カットが開いたときから変わっているので、元のファイルには上書きせず、版を1つ重ねて新しい .vdts.html に保存する（保存先を聞く）" : "版を1つ重ねて .vdts.html へ上書き保存（初回だけ保存先を聞く）"}">${saveVerb()}${state.src && state.src.kind === "vdts" ? "" : "（.vdts.html を作る）"}</button>
     <button class="ghost" id="tXdts" title="CSP 等へ渡す">xdts 書き出し</button>
     <button class="ghost" id="tTdts" title="東映DTS へ渡す">tdts 書き出し</button>
+    <button class="ghost" id="tAe" title="撮影（AE の SUNRISE MOON TimeSheet）へ渡す xdts を動画欄で書き出す。書き出す前に、AE で崩れる所を検査して見せる">撮影へ書き出し</button>
     <button class="ghost" id="tImport" title="xdts / tdts を選んで、今のシートの原画欄を差し替える（版を1つ重ねる。履歴・指示・動画欄はそのまま）">取り込み</button>
     <span class="sep"></span>
     <button class="ghost icon" id="tUndo" title="元に戻す" ${state.undo.length ? "" : "disabled"}>↶</button>
@@ -2285,6 +2345,7 @@ function renderTools() {
     await importIntoCurrent(file);
   });
   $("tTdts").addEventListener("click", () => exportDerived("tdts"));
+  $("tAe").addEventListener("click", () => exportForAe());
   $("tUndo").addEventListener("click", undo);
   $("tRedo").addEventListener("click", redo);
   $("tCut").addEventListener("click", () => {
@@ -3626,14 +3687,29 @@ async function exportDerived(kind) {
   if (kind === "xdts") { text = writeXdts(doc.sheet, { cut: doc.cut.cut, scene: doc.cut.scene, name: stem, source }); filename = stem + ".xdts"; }
   else {
     const withHistory = doc.history.length > 1 && window.confirm("履歴も sheet2, sheet3… として並べて書き出しますか？（東映DTS側での見え方は未検証。「キャンセル」で今の版だけ）");
-    const forAe = window.confirm("AE スクリプト（SUNRISE MOON TimeSheet 等、.tdts version 5 対応）向けに version 5 と名乗らせますか？（「キャンセル」で実物どおり version 7）");
-    text = writeTdts(doc, { withHistory, source, version: forAe ? 5 : 7 }); filename = stem + ".tdts";
+    text = writeTdts(doc, { withHistory, source }); filename = stem + ".tdts";
   }
+  await writeDerivedFile(text, filename, kind, true);
+}
+
+/* 撮影へ書き出し: AE（SUNRISE MOON TimeSheet）が読む xdts を動画欄で書く。tdts は読めない（timeSheets の包みを読まない）ので xdts だけ。
+   動画欄が無ければ書かない（勝手に作らない）。inspectForAe の警告があれば見せて、書くかどうかは人が決める。
+   開いた元の xdts（CSP の原画など）への上書きは提案しない。名前も別（_douga）にして取り違えを防ぐ */
+async function exportForAe() {
+  const doc = state.doc; if (!doc || !state.src) return;
+  if (!doc.sheet.douga.length) { showError("動画欄がありません。撮影に渡すのは動画欄です。「動画欄を更新」で原画欄から作ってから書き出してください"); return; }
+  const issues = inspectForAe(doc.sheet);
+  if (issues.length && !window.confirm(`撮影（AE）で崩れる所があります:\n\n${issues.slice(0, 12).map(s => "・" + s).join("\n")}${issues.length > 12 ? `\n・ほか${issues.length - 12}件` : ""}\n\nこのまま書き出しますか？（「キャンセル」で戻って直す）`)) return;
+  const stem = defaultStem(doc, state.src.basename);
+  await writeDerivedFile(writeXdts(doc.sheet, { cut: doc.cut.cut, scene: doc.cut.scene, name: stem, source: "douga" }), stem + "_douga.xdts", "xdts", false);
+}
+
+async function writeDerivedFile(text, filename, kind, offerOverwrite) {
   try {
     // 開いた元ファイルが同じ形式なら、そのファイルへの上書きを提案（黙っては上書きしない）
     const srcHandle = state.src.originalHandle && state.src.originalHandle.kind === "file" ? state.src.originalHandle : null;
     const originalName = state.src.originalName || state.src.basename;
-    if (srcHandle && state.src.originalKind === kind && window.confirm(`開いた元ファイル「${originalName}」を上書きしますか？（「キャンセル」で別名保存）`)) {
+    if (offerOverwrite && srcHandle && state.src.originalKind === kind && window.confirm(`開いた元ファイル「${originalName}」を上書きしますか？（「キャンセル」で別名保存）`)) {
       if (!(await ensureWritable(srcHandle))) throw new Error("書き込み許可が得られませんでした");
       const w = await srcHandle.createWritable(); await w.write(text); await w.close();
       setStatus(false, "上書き: " + originalName);
